@@ -743,7 +743,27 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                 # Get states
                 traffic_light_info['states'].append(agent.traffic_light.state)
         # traffic_light_info['visited'] = [False] * len(traffic_light_info['fences'])
-
+                
+            
+        ###########################################################
+        # --------------- Read vehicle info ----------------
+        ###########################################################
+        vehicle_info=dict(position=[], fences=[], speeds=[])
+        for agent in measurement_data.non_player_agents:
+            if agent.HasField('vehicle'):
+                # Get position
+                vehicle_info['position'].append((agent.vehicle.transform.location.x, 
+                                                    agent.vehicle.transform.location.y, 
+                                                    agent.vehicle.transform.location.z))
+                # Compute stop line
+                bb = obstacle_to_world(agent.vehicle.transform.location, 
+                                            agent.vehicle.bounding_box.extent, 
+                                            agent.vehicle.transform.rotation)
+                vehicle_info['fences'].append(bb)
+                
+                # Get forward speed
+                vehicle_info['speeds'].append(agent.vehicle.forward_speed) 
+            
         #############################################
         # Controller 2D Class Declaration
         #############################################
@@ -873,7 +893,8 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                                         STOP_LINE_BUFFER)
         bp = behavioural_planner.BehaviouralPlanner(BP_LOOKAHEAD_BASE,
                                                     LEAD_VEHICLE_LOOKAHEAD, 
-                                                    traffic_light_info)
+                                                    traffic_light_info,
+                                                    vehicle_info)
 
         #############################################
         # Scenario Execution Loop
@@ -932,6 +953,26 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                     # Get states
                     traffic_light_info['states'].append(agent.traffic_light.state)
             bp.set_traffic_light(traffic_light_info)
+
+            ###########################################################
+            # --------------- Read vehicle info ----------------
+            ###########################################################
+            vehicle_info=dict(position=[], fences=[], speeds=[])
+            for agent in measurement_data.non_player_agents:
+                if agent.HasField('vehicle'):
+                    # Get position
+                    vehicle_info['position'].append((agent.vehicle.transform.location.x, 
+                                                        agent.vehicle.transform.location.y, 
+                                                        agent.vehicle.transform.location.z))
+                    # Compute stop line
+                    bb = obstacle_to_world(agent.vehicle.transform.location, 
+                                                agent.vehicle.bounding_box.extent, 
+                                                agent.vehicle.transform.rotation)
+                    vehicle_info['fences'].append(bb)
+                    
+                    # Get forward speed
+                    vehicle_info['speeds'].append(agent.vehicle.forward_speed)
+            bp.set_vehicle(vehicle_info) 
 
             # UPDATE HERE the obstacles list
             obstacles = []
@@ -1014,7 +1055,7 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                     # Compute the velocity profile for the path, and compute the waypoints.
                     desired_speed = bp._goal_state[2]
                     decelerate_to_stop = bp._state == behavioural_planner.DECELERATE_TO_STOP
-                    local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_stop, None, bp._follow_lead_vehicle)
+                    local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_stop, bp._lead_car_state, bp._follow_lead_vehicle)
 
                     if local_waypoints != None:
                         # Update the controller waypoint path with the best local path.

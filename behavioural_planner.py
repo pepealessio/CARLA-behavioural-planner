@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
+from turtle import position
 from unicodedata import decimal
 import numpy as np
 import math
-from shapely.geometry import Point, LineString
+from shapely.geometry import Point, LineString, Polygon
 
 
 # State machine states
@@ -19,10 +20,11 @@ TRAFFICLIGHT_YELLOW_MIN_TIME = 3.5  # sec
 
 
 class BehaviouralPlanner:
-    def __init__(self, lookahead, lead_vehicle_lookahead, traffic_lights):
+    def __init__(self, lookahead, lead_vehicle_lookahead, traffic_lights, vehicle):
         self._lookahead                     = lookahead
         self._follow_lead_vehicle_lookahead = lead_vehicle_lookahead
         self._state                         = FOLLOW_LANE
+        self._lead_car_state                = None
         self._follow_lead_vehicle           = False
         self._obstacle_on_lane              = False
         self._goal_state                    = [0.0, 0.0, 0.0]
@@ -30,6 +32,7 @@ class BehaviouralPlanner:
         self._stop_count                    = 0
         self._lookahead_collision_index     = 0
         self._traffic_lights                = traffic_lights
+        self._vehicle                       = vehicle
 
         self._state_info = ''
     
@@ -39,6 +42,10 @@ class BehaviouralPlanner:
     def set_traffic_light(self, traffic_lights):
         for k in traffic_lights:
             self._traffic_lights[k] = traffic_lights[k]
+    
+    def set_vehicle(self,vehicle):
+        for k in vehicle:
+            self._vehicle[k]=vehicle[k]
 
     def get_state_info(self):
         return self._state_info
@@ -96,13 +103,25 @@ class BehaviouralPlanner:
         traffic_lights_index, traffic_light_present, traffic_light_state, distance_from_traffic_lights = \
             self.check_for_traffic_lights(waypoints, closest_index, goal_index, ego_state)
 
+        vehicle_index, vehicle_presence, vehicle_position, vehicle_speed, dist_from_vehicle = \
+            self.check_lead_vehicle(waypoints, closest_index, goal_index, ego_state)
+
         # Set debug state info
         self._state_info = f'Current State: {"FOLLOW_LANE" if self._state == 0 else "DECELERATE" if self._state == 1 else "STOPPED"}' + \
             f'\n\nCurrent Input:' + \
-            f'\n (+) ego-state: {[round(x, 2) for x in ego_state]}' + \
-            f'\n (+) Traffic lights: {"no" if not traffic_light_present else ""}'
+            f'\n  - ego-state: {[round(x, 2) for x in ego_state]}' + \
+            f'\n  - Traffic lights: {"no" if not traffic_light_present else ""}'
         self._state_info += f'{"green" if traffic_light_state == 0 else "yellow" if traffic_light_state == 1 else "red"}' + \
                             f', distance: {round(distance_from_traffic_lights, 2)} m' if traffic_light_present else ''
+        self._state_info += f'\n  - Lead vehicle: {"no" if not vehicle_presence else ""}'
+        self._state_info += f'{[round(x, 2) for x in vehicle_position]}, speed: {round(vehicle_speed, 2)} m/s, distance: {round(dist_from_vehicle, 2)} m' if vehicle_presence else ''
+
+        if vehicle_presence:
+            self._follow_lead_vehicle = True
+            self._lead_car_state = [*vehicle_position[0:2], vehicle_speed]
+        else:
+            self._follow_lead_vehicle = False
+            self._lead_car_state = None
 
         # FOLLOW_LANE: In this state the vehicle move to reach the goal.
         if self._state == FOLLOW_LANE:
@@ -203,6 +222,28 @@ class BehaviouralPlanner:
                 
         else:
             raise ValueError('Invalid state value.')
+
+    def check_lead_vehicle(self, waypoints, closest_index, goal_index, ego_state):
+        ego_point = Point(ego_state[0], ego_state[1])
+
+        for i in range(closest_index, goal_index):
+            # Check to see if path segment crosses any of the stop lines.
+            path_wp1_wp2 = LineString([waypoints[i][0:2], waypoints[i+1][0:2]])
+
+            for key, vehicle_bb in enumerate(self._vehicle['fences']):
+                vehicle = Polygon(vehicle_bb)
+
+                intersection_coords = vehicle.intersection(path_wp1_wp2).coords
+
+                if len(intersection_coords) > 0:
+                    goal_index = i 
+
+                    intersection_points = [Point(coords) for coords in intersection_coords]
+                    dist_from_intersection = min([p.distance(ego_point) for p in intersection_points])
+
+                    return goal_index, True, self._vehicle['position'][key], self._vehicle['speeds'][key], dist_from_intersection
+
+        return goal_index, False, None, 0, float('inf')
 
     # Gets the goal index in the list of waypoints, based on the lookahead and
     # the current ego state. In particular, find the earliest waypoint that has accumulated
@@ -326,92 +367,6 @@ class BehaviouralPlanner:
                     return goal_index, True, self._traffic_lights['states'][key], dist_from_tl
 
         return goal_index, False, None, float('inf')
-
-    # def check_for_traffic_lights(self, waypoints, closest_index, goal_index, ego_state):
-    #     """Checks for a traffic light that is intervening the goal path.
-
-    #     Checks for a traffic light that is intervening the goal path. Returns a new
-    #     goal index (the current goal index is obstructed by a stop line), a
-    #     boolean flag indicating if a stop sign obstruction was found, the state of
-    #     the traffic light, and the distance from the closest point.
-        
-    #     args:
-    #         waypoints: current waypoints to track. (global frame)
-    #             length and speed in m and m/s.
-    #             (includes speed to track at each x,y location.)
-    #             format: [[x0, y0, v0],
-    #                      [x1, y1, v1],
-    #                      ...
-    #                      [xn, yn, vn]]
-    #             example:
-    #                 waypoints[2][1]: 
-    #                 returns the 3rd waypoint's y position
-
-    #                 waypoints[5]:
-    #                 returns [x5, y5, v5] (6th waypoint)
-    #         closest_index: index of the waypoint which is closest to the vehicle.
-    #             i.e. waypoints[closest_index] gives the waypoint closest to the vehicle.
-    #         goal_index (current): Current goal index for the vehicle to reach
-    #             i.e. waypoints[goal_index] gives the goal waypoint
-    #         ego_state: ego state vector for the vehicle. (global frame)
-    #         format: [ego_x, ego_y, ego_yaw, ego_open_loop_speed]
-    #             ego_x and ego_y     : position (m)
-    #             ego_yaw             : top-down orientation [-pi to pi]
-    #             ego_open_loop_speed : open loop speed (m/s)
-    #     """
-    #     for i in range(closest_index, goal_index):
-    #         # Check to see if path segment crosses any of the stop lines.
-    #         intersect_flag = False
-    #         for key,traffic_light_fence in enumerate(self._traffic_lights['fences']):
-    #             # if self._traffic_lights['visited'][key]: continue
-
-    #             wp_1   = np.array(waypoints[i][0:2])
-    #             wp_2   = np.array(waypoints[i+1][0:2])
-    #             s_1    = np.array(traffic_light_fence[0:2])
-    #             s_2    = np.array(traffic_light_fence[2:4])
-
-    #             v1     = np.subtract(wp_2, wp_1)
-    #             v2     = np.subtract(s_1, wp_2)
-    #             sign_1 = np.sign(np.cross(v1, v2))
-    #             v2     = np.subtract(s_2, wp_2)
-    #             sign_2 = np.sign(np.cross(v1, v2))
-
-    #             v1     = np.subtract(s_2, s_1)
-    #             v2     = np.subtract(wp_1, s_2)
-    #             sign_3 = np.sign(np.cross(v1, v2))
-    #             v2     = np.subtract(wp_2, s_2)
-    #             sign_4 = np.sign(np.cross(v1, v2))
-
-    #             # Check if the line segments intersect.
-    #             if (sign_1 != sign_2) and (sign_3 != sign_4):
-    #                 intersect_flag = True
-
-    #             # Check if the collinearity cases hold.
-    #             if (sign_1 == 0) and pointOnSegment(wp_1, s_1, wp_2):
-    #                 intersect_flag = True
-    #             if (sign_2 == 0) and pointOnSegment(wp_1, s_2, wp_2):
-    #                 intersect_flag = True
-    #             if (sign_3 == 0) and pointOnSegment(s_1, wp_1, s_2):
-    #                 intersect_flag = True
-    #             if (sign_3 == 0) and pointOnSegment(s_1, wp_2, s_2):
-    #                 intersect_flag = True
-
-    #             # If there is an intersection with a stop line, update
-    #             # the goal state to stop before the goal line.
-    #             if intersect_flag:
-    #                 goal_index = i
-    #                 # self._traffic_lights['visited'][key] = True
-
-    #                 dist_from_tl = np.sqrt( \
-    #                                (ego_state[0] - waypoints[goal_index][0])**2 + \
-    #                                (ego_state[1] - waypoints[goal_index][1])**2 \
-    #                 )
-    #                 if dist_from_tl < 3.5:
-    #                     dist_from_tl = 0.0
-                    
-    #                 return goal_index, True, self._traffic_lights['states'][key], dist_from_tl
-
-    #     return goal_index, False, None, float('inf')
                 
     # Checks to see if we need to modify our velocity profile to accomodate the
     # lead vehicle.
