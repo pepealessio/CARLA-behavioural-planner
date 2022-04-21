@@ -223,28 +223,6 @@ class BehaviouralPlanner:
         else:
             raise ValueError('Invalid state value.')
 
-    def check_lead_vehicle(self, waypoints, closest_index, goal_index, ego_state):
-        ego_point = Point(ego_state[0], ego_state[1])
-
-        for i in range(closest_index, goal_index):
-            # Check to see if path segment crosses any of the stop lines.
-            path_wp1_wp2 = LineString([waypoints[i][0:2], waypoints[i+1][0:2]])
-
-            for key, vehicle_bb in enumerate(self._vehicle['fences']):
-                vehicle = Polygon(vehicle_bb)
-
-                intersection_coords = vehicle.intersection(path_wp1_wp2).coords
-
-                if len(intersection_coords) > 0:
-                    goal_index = i 
-
-                    intersection_points = [Point(coords) for coords in intersection_coords]
-                    dist_from_intersection = min([p.distance(ego_point) for p in intersection_points])
-
-                    return goal_index, True, self._vehicle['position'][key], self._vehicle['speeds'][key], dist_from_intersection
-
-        return goal_index, False, None, 0, float('inf')
-
     # Gets the goal index in the list of waypoints, based on the lookahead and
     # the current ego state. In particular, find the earliest waypoint that has accumulated
     # arc length (including closest_len) that is greater than or equal to self._lookahead.
@@ -367,6 +345,77 @@ class BehaviouralPlanner:
                     return goal_index, True, self._traffic_lights['states'][key], dist_from_tl
 
         return goal_index, False, None, float('inf')
+
+    def check_lead_vehicle(self, waypoints, closest_index, goal_index, ego_state):
+        """Checks for a lead vehicle that is intervening the goal path.
+
+        Checks for a lead vehicle that is intervening the goal path. Returns a new
+        goal index (the current goal index is obstructed by a stop line), a
+        boolean flag indicating if a stop sign obstruction was found, the state of
+        the lead vehicle, and the distance from the closest point.
+        
+        args:
+            waypoints: current waypoints to track. (global frame)
+                length and speed in m and m/s.
+                (includes speed to track at each x,y location.)
+                format: [[x0, y0, v0],
+                         [x1, y1, v1],
+                         ...
+                         [xn, yn, vn]]
+                example:
+                    waypoints[2][1]: 
+                    returns the 3rd waypoint's y position
+
+                    waypoints[5]:
+                    returns [x5, y5, v5] (6th waypoint)
+            closest_index: index of the waypoint which is closest to the vehicle.
+                i.e. waypoints[closest_index] gives the waypoint closest to the vehicle.
+            goal_index (current): Current goal index for the vehicle to reach
+                i.e. waypoints[goal_index] gives the goal waypoint
+            ego_state: ego state vector for the vehicle. (global frame)
+            format: [ego_x, ego_y, ego_yaw, ego_open_loop_speed]
+                ego_x and ego_y     : position (m)
+                ego_yaw             : top-down orientation [-pi to pi]
+                ego_open_loop_speed : open loop speed (m/s)
+        """
+        distance_seen = 0
+        intersection_flag = False
+        vehicle_position = None
+        vehicle_speed = 0
+        dist_from_intersection = float('inf')
+
+        ego_point = Point(ego_state[0], ego_state[1])
+
+        for i in range(closest_index, len(waypoints)):
+            # Check to see if path segment crosses any of the stop lines.
+            path_wp1_wp2 = LineString([waypoints[i][0:2], waypoints[i+1][0:2]])
+
+            distance_seen += path_wp1_wp2.length
+
+            for key, vehicle_bb in enumerate(self._vehicle['fences']):
+                vehicle = Polygon(vehicle_bb)
+
+                intersection_coords = vehicle.intersection(path_wp1_wp2).coords
+                intersection_flag = len(intersection_coords) > 0
+
+                if intersection_flag:
+                    goal_index = i 
+
+                    intersection_points = [Point(coords) for coords in intersection_coords]
+                    min_dist_from_intersection = min([p.distance(ego_point) for p in intersection_points])
+
+                    if min_dist_from_intersection > self._follow_lead_vehicle_lookahead:
+                        intersection_flag = False
+
+                    dist_from_intersection = min_dist_from_intersection
+                    vehicle_position = self._vehicle['position'][key]
+                    vehicle_speed = self._vehicle['speeds'][key]
+                    break
+            
+            if intersection_flag or (distance_seen >= self._follow_lead_vehicle_lookahead):
+                break
+
+        return goal_index, intersection_flag, vehicle_position, vehicle_speed, dist_from_intersection
                 
     # Checks to see if we need to modify our velocity profile to accomodate the
     # lead vehicle.
