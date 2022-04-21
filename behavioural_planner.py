@@ -18,6 +18,8 @@ TRAFFICLIGHT_YELLOW = 1
 TRAFFICLIGHT_RED = 2
 TRAFFICLIGHT_YELLOW_MIN_TIME = 3.5  # sec 
 
+BB_PATH = 1.5  # m
+
 
 class BehaviouralPlanner:
     def __init__(self, lookahead, lead_vehicle_lookahead, traffic_lights, vehicle):
@@ -389,25 +391,36 @@ class BehaviouralPlanner:
         for i in range(closest_index, len(waypoints)):
             # Check to see if path segment crosses any of the stop lines.
             path_wp1_wp2 = LineString([waypoints[i][0:2], waypoints[i+1][0:2]])
-
             distance_seen += path_wp1_wp2.length
+
+            _dy = waypoints[i+1][1] - waypoints[i][1]
+            _dx = waypoints[i+1][0] - waypoints[i][0]
+            path_angle = np.arctan(_dy/_dx)
+
+            # path_wp1_wp2 but wider
+            path_bb = Polygon([(waypoints[i][0] + BB_PATH * np.cos(path_angle - np.pi / 2),
+                                waypoints[i][1] + BB_PATH * np.sin(path_angle - np.pi / 2)),
+                               (waypoints[i][0] + BB_PATH * np.cos(path_angle + np.pi / 2),
+                                waypoints[i][1] + BB_PATH * np.sin(path_angle + np.pi / 2)),
+                               (waypoints[i+1][0] + BB_PATH * np.cos(path_angle + np.pi / 2),
+                                waypoints[i+1][1] + BB_PATH * np.sin(path_angle + np.pi / 2)),
+                               (waypoints[i+1][0] + BB_PATH * np.cos(path_angle - np.pi / 2),
+                                waypoints[i+1][1] + BB_PATH * np.sin(path_angle - np.pi / 2))])
 
             for key, vehicle_bb in enumerate(self._vehicle['fences']):
                 vehicle = Polygon(vehicle_bb)
 
-                intersection_coords = vehicle.intersection(path_wp1_wp2).coords
-                intersection_flag = len(intersection_coords) > 0
+                intersection_flag = vehicle.intersects(path_bb)
 
                 if intersection_flag:
                     goal_index = i 
 
-                    intersection_points = [Point(coords) for coords in intersection_coords]
-                    min_dist_from_intersection = min([p.distance(ego_point) for p in intersection_points])
+                    other_vehicle_point = Point(self._vehicle['position'][key][0], self._vehicle['position'][key][1])
+                    dist_from_intersection = ego_point.distance(other_vehicle_point)
 
-                    if min_dist_from_intersection > self._follow_lead_vehicle_lookahead:
+                    if dist_from_intersection > self._follow_lead_vehicle_lookahead:
                         intersection_flag = False
 
-                    dist_from_intersection = min_dist_from_intersection
                     vehicle_position = self._vehicle['position'][key]
                     vehicle_speed = self._vehicle['speeds'][key]
                     break
