@@ -502,458 +502,251 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
     """ Executes waypoint navigation demo.
     """
 
-    with make_carla_client(args.host, args.port) as client:
-        print('Carla client connected.')
+    try:
 
-        settings = make_carla_settings(args, num_pedestrians, num_vehicles, seed_pedestrians, seed_vehicles)
+        with make_carla_client(args.host, args.port) as client:
+            print('Carla client connected.')
 
-        # Now we load these settings into the server. The server replies
-        # with a scene description containing the available start spots for
-        # the player. Here we can provide a CarlaSettings object or a
-        # CarlaSettings.ini file as string.
-        scene = client.load_settings(settings)
+            settings = make_carla_settings(args, num_pedestrians, num_vehicles, seed_pedestrians, seed_vehicles)
 
-        # Refer to the player start folder in the WorldOutliner to see the 
-        # player start information
-        player_start = start_wp
+            # Now we load these settings into the server. The server replies
+            # with a scene description containing the available start spots for
+            # the player. Here we can provide a CarlaSettings object or a
+            # CarlaSettings.ini file as string.
+            scene = client.load_settings(settings)
 
-        # Notify the server that we want to start the episode at the
-        # player_start index. This function blocks until the server is ready
-        # to start the episode.
-        print('Starting new episode at %r...' % scene.map_name)
-        client.start_episode(player_start)
+            # Refer to the player start folder in the WorldOutliner to see the 
+            # player start information
+            player_start = start_wp
 
-        #############################################
-        # Load Configurations
-        #############################################
+            # Notify the server that we want to start the episode at the
+            # player_start index. This function blocks until the server is ready
+            # to start the episode.
+            print('Starting new episode at %r...' % scene.map_name)
+            client.start_episode(player_start)
 
-        # Load configuration file (options.cfg) and then parses for the various
-        # options. Here we have two main options:
-        # live_plotting and live_plotting_period, which controls whether
-        # live plotting is enabled or how often the live plotter updates
-        # during the simulation run.
-        config = configparser.ConfigParser()
-        config.read(os.path.join(
-                os.path.dirname(os.path.realpath(__file__)), 'options.cfg'))         
-        demo_opt = config['Demo Parameters']
+            #############################################
+            # Load Configurations
+            #############################################
 
-        # Get options
-        enable_live_plot = demo_opt.get('live_plotting', 'true').capitalize()
-        enable_live_plot = enable_live_plot == 'True'
-        live_plot_period = float(demo_opt.get('live_plotting_period', 0))
+            # Load configuration file (options.cfg) and then parses for the various
+            # options. Here we have two main options:
+            # live_plotting and live_plotting_period, which controls whether
+            # live plotting is enabled or how often the live plotter updates
+            # during the simulation run.
+            config = configparser.ConfigParser()
+            config.read(os.path.join(
+                    os.path.dirname(os.path.realpath(__file__)), 'options.cfg'))         
+            demo_opt = config['Demo Parameters']
 
-        # Set options
-        live_plot_timer = Timer(live_plot_period)
-        
-        # Settings Mission Planner
-        mission_planner = CityTrack("Town01")
+            # Get options
+            enable_live_plot = demo_opt.get('live_plotting', 'true').capitalize()
+            enable_live_plot = enable_live_plot == 'True'
+            live_plot_period = float(demo_opt.get('live_plotting_period', 0))
 
-        #############################################
-        # Determine simulation average timestep (and total frames)
-        #############################################
-        # Ensure at least one frame is used to compute average timestep
-        num_iterations = ITER_FOR_SIM_TIMESTEP
-        if (ITER_FOR_SIM_TIMESTEP < 1):
-            num_iterations = 1
-
-        # Gather current data from the CARLA server. This is used to get the
-        # simulator starting game time. Note that we also need to
-        # send a command back to the CARLA server because synchronous mode
-        # is enabled.
-        measurement_data, sensor_data = client.read_data()
-        sim_start_stamp = measurement_data.game_timestamp / 1000.0
-        # Send a control command to proceed to next iteration.
-        # This mainly applies for simulations that are in synchronous mode.
-        send_control_command(client, throttle=0.0, steer=0, brake=1.0)
-        # Computes the average timestep based on several initial iterations
-        sim_duration = 0
-        for i in range(num_iterations):
-            # Gather current data
-            measurement_data, sensor_data = client.read_data()
-            # Send a control command to proceed to next iteration
-            send_control_command(client, throttle=0.0, steer=0, brake=1.0)
-            # Last stamp
-            if i == num_iterations - 1:
-                sim_duration = measurement_data.game_timestamp / 1000.0 -\
-                               sim_start_stamp
-
-        # Outputs average simulation timestep and computes how many frames
-        # will elapse before the simulation should end based on various
-        # parameters that we set in the beginning.
-        SIMULATION_TIME_STEP = sim_duration / float(num_iterations)
-        print("SERVER SIMULATION STEP APPROXIMATION: " + \
-              str(SIMULATION_TIME_STEP))
-        TOTAL_EPISODE_FRAMES = int((TOTAL_RUN_TIME + WAIT_TIME_BEFORE_START) /\
-                               SIMULATION_TIME_STEP) + TOTAL_FRAME_BUFFER
-
-        #############################################
-        # Frame-by-Frame Iteration and Initialization
-        #############################################
-        # Store pose history starting from the start position
-        measurement_data, sensor_data = client.read_data()
-        start_timestamp = measurement_data.game_timestamp / 1000.0
-        start_x, start_y, start_z, start_pitch, start_roll, start_yaw = get_current_pose(measurement_data)
-        send_control_command(client, throttle=0.0, steer=0, brake=1.0)
-        x_history     = [start_x]
-        y_history     = [start_y]
-        yaw_history   = [start_yaw]
-        time_history  = [0]
-        speed_history = [0]
-        collided_flag_history = [False]  # assume player starts off non-collided
-
-        #############################################
-        # Settings Waypoints
-        #############################################
-        starting    = scene.player_start_spots[start_wp]
-        destination = scene.player_start_spots[stop_wp]
-
-        # Starting position is the current position
-        # (x, y, z, pitch, roll, yaw)
-        source_pos = [starting.location.x, starting.location.y, starting.location.z]
-        source_ori = [starting.orientation.x, starting.orientation.y]
-        source = mission_planner.project_node(source_pos)
-
-        # Destination position
-        destination_pos = [destination.location.x, destination.location.y, destination.location.z]
-        destination_ori = [destination.orientation.x, destination.orientation.y]
-        destination = mission_planner.project_node(destination_pos)
-
-        waypoints = []
-        waypoints_route = mission_planner.compute_route(source, source_ori, destination, destination_ori)
-        desired_speed = 5.0
-        turn_speed    = 2.5
-
-        intersection_nodes = mission_planner.get_intersection_nodes()
-        intersection_pair = []
-        turn_cooldown = 0
-        prev_x = False
-        prev_y = False
-        # Put waypoints in the lane
-        previuos_waypoint = mission_planner._map.convert_to_world(waypoints_route[0])
-        for i in range(1,len(waypoints_route)):
-            point = waypoints_route[i]
-
-            waypoint = mission_planner._map.convert_to_world(point)
-
-            current_waypoint = make_correction(waypoint,previuos_waypoint,desired_speed)
+            # Set options
+            live_plot_timer = Timer(live_plot_period)
             
-            dx = current_waypoint[0] - previuos_waypoint[0]
-            dy = current_waypoint[1] - previuos_waypoint[1]
+            # Settings Mission Planner
+            mission_planner = CityTrack("Town01")
 
-            is_turn = ((prev_x and abs(dy) > 0.1) or (prev_y and abs(dx) > 0.1)) and not(abs(dx) > 0.1 and abs(dy) > 0.1)
+            #############################################
+            # Determine simulation average timestep (and total frames)
+            #############################################
+            # Ensure at least one frame is used to compute average timestep
+            num_iterations = ITER_FOR_SIM_TIMESTEP
+            if (ITER_FOR_SIM_TIMESTEP < 1):
+                num_iterations = 1
 
-            prev_x = abs(dx) > 0.1
-            prev_y = abs(dy) > 0.1
+            # Gather current data from the CARLA server. This is used to get the
+            # simulator starting game time. Note that we also need to
+            # send a command back to the CARLA server because synchronous mode
+            # is enabled.
+            measurement_data, sensor_data = client.read_data()
+            sim_start_stamp = measurement_data.game_timestamp / 1000.0
+            # Send a control command to proceed to next iteration.
+            # This mainly applies for simulations that are in synchronous mode.
+            send_control_command(client, throttle=0.0, steer=0, brake=1.0)
+            # Computes the average timestep based on several initial iterations
+            sim_duration = 0
+            for i in range(num_iterations):
+                # Gather current data
+                measurement_data, sensor_data = client.read_data()
+                # Send a control command to proceed to next iteration
+                send_control_command(client, throttle=0.0, steer=0, brake=1.0)
+                # Last stamp
+                if i == num_iterations - 1:
+                    sim_duration = measurement_data.game_timestamp / 1000.0 -\
+                                sim_start_stamp
 
-            if point in intersection_nodes:                
-                prev_start_intersection = mission_planner._map.convert_to_world(waypoints_route[i-2])
-                center_intersection = mission_planner._map.convert_to_world(waypoints_route[i])
+            # Outputs average simulation timestep and computes how many frames
+            # will elapse before the simulation should end based on various
+            # parameters that we set in the beginning.
+            SIMULATION_TIME_STEP = sim_duration / float(num_iterations)
+            print("SERVER SIMULATION STEP APPROXIMATION: " + \
+                str(SIMULATION_TIME_STEP))
+            TOTAL_EPISODE_FRAMES = int((TOTAL_RUN_TIME + WAIT_TIME_BEFORE_START) /\
+                                SIMULATION_TIME_STEP) + TOTAL_FRAME_BUFFER
 
-                start_intersection = mission_planner._map.convert_to_world(waypoints_route[i-1])
-                end_intersection = mission_planner._map.convert_to_world(waypoints_route[i+1])
+            #############################################
+            # Frame-by-Frame Iteration and Initialization
+            #############################################
+            # Store pose history starting from the start position
+            measurement_data, sensor_data = client.read_data()
+            start_timestamp = measurement_data.game_timestamp / 1000.0
+            start_x, start_y, start_z, start_pitch, start_roll, start_yaw = get_current_pose(measurement_data)
+            send_control_command(client, throttle=0.0, steer=0, brake=1.0)
+            x_history     = [start_x]
+            y_history     = [start_y]
+            yaw_history   = [start_yaw]
+            time_history  = [0]
+            speed_history = [0]
+            collided_flag_history = [False]  # assume player starts off non-collided
 
-                start_intersection = make_correction(start_intersection,prev_start_intersection,turn_speed)
-                end_intersection = make_correction(end_intersection,center_intersection,turn_speed)
-                
-                dx = start_intersection[0] - end_intersection[0]
-                dy = start_intersection[1] - end_intersection[1]
+            #############################################
+            # Settings Waypoints
+            #############################################
+            starting    = scene.player_start_spots[start_wp]
+            destination = scene.player_start_spots[stop_wp]
 
-                if abs(dx) > 0 and abs(dy) > 0:
-                    intersection_pair.append((center_intersection,len(waypoints)))
-                    waypoints[-1][2] = turn_speed
-                    
-                    middle_point = [(start_intersection[0] + end_intersection[0]) /2,  (start_intersection[1] + end_intersection[1]) /2]
+            # Starting position is the current position
+            # (x, y, z, pitch, roll, yaw)
+            source_pos = [starting.location.x, starting.location.y, starting.location.z]
+            source_ori = [starting.orientation.x, starting.orientation.y]
+            source = mission_planner.project_node(source_pos)
 
-                    centering = 0.75
+            # Destination position
+            destination_pos = [destination.location.x, destination.location.y, destination.location.z]
+            destination_ori = [destination.orientation.x, destination.orientation.y]
+            destination = mission_planner.project_node(destination_pos)
 
-                    middle_intersection = [(centering*middle_point[0] + (1-centering)*center_intersection[0]),  (centering*middle_point[1] + (1-centering)*center_intersection[1])]
+            waypoints = []
+            waypoints_route = mission_planner.compute_route(source, source_ori, destination, destination_ori)
+            desired_speed = 5.0
+            turn_speed    = 2.5
 
-                    # Point at intersection:
-                    A = [[start_intersection[0], start_intersection[1], 1],
-                         [end_intersection[0], end_intersection[1], 1],
-                         [middle_intersection[0], middle_intersection[1], 1]]
-                        
-                    b = [-start_intersection[0]**2 - start_intersection[1]**2, 
-                         -end_intersection[0]**2 - end_intersection[1]**2,
-                         -middle_intersection[0]**2 - middle_intersection[1]**2]
+            intersection_nodes = mission_planner.get_intersection_nodes()
+            intersection_pair = []
+            turn_cooldown = 0
+            prev_x = False
+            prev_y = False
+            # Put waypoints in the lane
+            previuos_waypoint = mission_planner._map.convert_to_world(waypoints_route[0])
+            for i in range(1,len(waypoints_route)):
+                point = waypoints_route[i]
 
-                    coeffs = np.matmul(np.linalg.inv(A), b)
-
-                    x = start_intersection[0]
-                    
-                    center_x = -coeffs[0]/2
-                    center_y = -coeffs[1]/2
-
-                    r = sqrt(center_x**2 + center_y**2 - coeffs[2])
-
-                    theta_start = math.atan2((start_intersection[1] - center_y),(start_intersection[0] - center_x))
-                    theta_end = math.atan2((end_intersection[1] - center_y),(end_intersection[0] - center_x))
-
-                    theta = theta_start
-
-                    start_to_end = 1 if theta_start < theta_end else -1
-
-                    while (start_to_end==1 and theta < theta_end) or (start_to_end==-1 and theta > theta_end):
-                        waypoint_on_lane = [0,0,0]
-
-                        waypoint_on_lane[0] = center_x + r * cos(theta)
-                        waypoint_on_lane[1] = center_y + r * sin(theta)
-                        waypoint_on_lane[2] = turn_speed
-
-                        waypoints.append(waypoint_on_lane)
-                        theta += (abs(theta_end - theta_start) * start_to_end) / 10
-                    
-                    turn_cooldown = 4
-            else:
                 waypoint = mission_planner._map.convert_to_world(point)
 
-                if turn_cooldown > 0:
-                    target_speed = turn_speed
-                    turn_cooldown -= 1
+                current_waypoint = make_correction(waypoint,previuos_waypoint,desired_speed)
+                
+                dx = current_waypoint[0] - previuos_waypoint[0]
+                dy = current_waypoint[1] - previuos_waypoint[1]
+
+                is_turn = ((prev_x and abs(dy) > 0.1) or (prev_y and abs(dx) > 0.1)) and not(abs(dx) > 0.1 and abs(dy) > 0.1)
+
+                prev_x = abs(dx) > 0.1
+                prev_y = abs(dy) > 0.1
+
+                if point in intersection_nodes:                
+                    prev_start_intersection = mission_planner._map.convert_to_world(waypoints_route[i-2])
+                    center_intersection = mission_planner._map.convert_to_world(waypoints_route[i])
+
+                    start_intersection = mission_planner._map.convert_to_world(waypoints_route[i-1])
+                    end_intersection = mission_planner._map.convert_to_world(waypoints_route[i+1])
+
+                    start_intersection = make_correction(start_intersection,prev_start_intersection,turn_speed)
+                    end_intersection = make_correction(end_intersection,center_intersection,turn_speed)
+                    
+                    dx = start_intersection[0] - end_intersection[0]
+                    dy = start_intersection[1] - end_intersection[1]
+
+                    if abs(dx) > 0 and abs(dy) > 0:
+                        intersection_pair.append((center_intersection,len(waypoints)))
+                        waypoints[-1][2] = turn_speed
+                        
+                        middle_point = [(start_intersection[0] + end_intersection[0]) /2,  (start_intersection[1] + end_intersection[1]) /2]
+
+                        centering = 0.75
+
+                        middle_intersection = [(centering*middle_point[0] + (1-centering)*center_intersection[0]),  (centering*middle_point[1] + (1-centering)*center_intersection[1])]
+
+                        # Point at intersection:
+                        A = [[start_intersection[0], start_intersection[1], 1],
+                            [end_intersection[0], end_intersection[1], 1],
+                            [middle_intersection[0], middle_intersection[1], 1]]
+                            
+                        b = [-start_intersection[0]**2 - start_intersection[1]**2, 
+                            -end_intersection[0]**2 - end_intersection[1]**2,
+                            -middle_intersection[0]**2 - middle_intersection[1]**2]
+
+                        coeffs = np.matmul(np.linalg.inv(A), b)
+
+                        x = start_intersection[0]
+                        
+                        center_x = -coeffs[0]/2
+                        center_y = -coeffs[1]/2
+
+                        r = sqrt(center_x**2 + center_y**2 - coeffs[2])
+
+                        theta_start = math.atan2((start_intersection[1] - center_y),(start_intersection[0] - center_x))
+                        theta_end = math.atan2((end_intersection[1] - center_y),(end_intersection[0] - center_x))
+
+                        theta = theta_start
+
+                        start_to_end = 1 if theta_start < theta_end else -1
+
+                        while (start_to_end==1 and theta < theta_end) or (start_to_end==-1 and theta > theta_end):
+                            waypoint_on_lane = [0,0,0]
+
+                            waypoint_on_lane[0] = center_x + r * cos(theta)
+                            waypoint_on_lane[1] = center_y + r * sin(theta)
+                            waypoint_on_lane[2] = turn_speed
+
+                            waypoints.append(waypoint_on_lane)
+                            theta += (abs(theta_end - theta_start) * start_to_end) / 10
+                        
+                        turn_cooldown = 4
                 else:
-                    target_speed = desired_speed
-                
-                waypoint_on_lane = make_correction(waypoint,previuos_waypoint,target_speed)
+                    waypoint = mission_planner._map.convert_to_world(point)
 
-                waypoints.append(waypoint_on_lane)
+                    if turn_cooldown > 0:
+                        target_speed = turn_speed
+                        turn_cooldown -= 1
+                    else:
+                        target_speed = desired_speed
+                    
+                    waypoint_on_lane = make_correction(waypoint,previuos_waypoint,target_speed)
 
-                previuos_waypoint = waypoint
+                    waypoints.append(waypoint_on_lane)
 
-        waypoints = np.array(waypoints)
+                    previuos_waypoint = waypoint
 
-        #######################################################################
-        # -------------- Get initial traffic lights state ---------------------
-        #######################################################################
+            waypoints = np.array(waypoints)
 
-        # Read traffic lights info
-        traffic_light_info=dict(position=[], fences=[], states=[])
-        for agent in measurement_data.non_player_agents:
-            if agent.HasField('traffic_light'):
-                # Get position
-                traffic_light_info['position'].append((agent.traffic_light.transform.location.x, 
-                                                       agent.traffic_light.transform.location.y))
-                # Compute stop line
-                bb = obstacle_to_world(agent.traffic_light.transform.location, 
-                                    DefaultMunch.fromDict(dict(x=TRAFFIC_LIGHT_STOP_LINE_LEN,y=0,z=0)), 
-                                    agent.traffic_light.transform.rotation)
-                traffic_light_info['fences'].append([*bb[0], *bb[4]])  # 0,1,2 is the right point, 
-                                                                       # 4,5,6 is the left point (are
-                                                                       # the same because the bb is 
-                                                                       # compressed on the y)
-                # Get states
-                traffic_light_info['states'].append(agent.traffic_light.state)
-        # traffic_light_info['visited'] = [False] * len(traffic_light_info['fences'])
-                
-            
-        ###########################################################
-        # --------------- Read vehicle info ----------------
-        ###########################################################
-        vehicle_info=dict(position=[], fences=[], speeds=[])
-        for agent in measurement_data.non_player_agents:
-            if agent.HasField('vehicle'):
-                # Get position
-                vehicle_info['position'].append((agent.vehicle.transform.location.x, 
-                                                    agent.vehicle.transform.location.y, 
-                                                    agent.vehicle.transform.location.z))
-                # Compute stop line
-                bb = obstacle_to_world(agent.vehicle.transform.location, 
-                                            agent.vehicle.bounding_box.extent, 
-                                            agent.vehicle.transform.rotation)
-                vehicle_info['fences'].append(bb)
-                
-                # Get forward speed
-                vehicle_info['speeds'].append(agent.vehicle.forward_speed) 
-            
-        #############################################
-        # Controller 2D Class Declaration
-        #############################################
-        # This is where we take the controller2d.py class
-        # and apply it to the simulator
-        controller = controller2d.Controller2D(waypoints)
+            #######################################################################
+            # -------------- Get initial traffic lights state ---------------------
+            #######################################################################
 
-        #############################################
-        # Vehicle Trajectory Live Plotting Setup
-        #############################################
-        # Uses the live plotter to generate live feedback during the simulation
-        # The two feedback includes the trajectory feedback and
-        # the controller feedback (which includes the speed tracking).
-        lp_traj = lv.LivePlotter(tk_title="Trajectory Trace")
-        lp_1d = lv.LivePlotter(tk_title="Controls Feedback")
-
-        ###
-        # Add 2D position / trajectory plot
-        ###
-        trajectory_fig = lp_traj.plot_new_dynamic_2d_figure(
-                title='Vehicle Trajectory',
-                figsize=(FIGSIZE_X_INCHES, FIGSIZE_Y_INCHES),
-                edgecolor="black",
-                rect=[PLOT_LEFT, PLOT_BOT, PLOT_WIDTH, PLOT_HEIGHT])
-
-        trajectory_fig.set_invert_x_axis() # Because UE4 uses left-handed 
-                                           # coordinate system the X
-                                           # axis in the graph is flipped
-        trajectory_fig.set_axis_equal()    # X-Y spacing should be equal in size
-
-        # Add waypoint markers
-        trajectory_fig.add_graph("waypoints", window_size=len(waypoints),
-                                 x0=waypoints[:,0], y0=waypoints[:,1],
-                                 linestyle="-", marker="", color='g')
-        # Add trajectory markers
-        trajectory_fig.add_graph("trajectory", window_size=TOTAL_EPISODE_FRAMES,
-                                 x0=[start_x]*TOTAL_EPISODE_FRAMES, 
-                                 y0=[start_y]*TOTAL_EPISODE_FRAMES,
-                                 color=[1, 0.5, 0])
-        # Add starting position marker
-        trajectory_fig.add_graph("start_pos", window_size=1, 
-                                 x0=[start_x], y0=[start_y],
-                                 marker=11, color=[1, 0.5, 0], 
-                                 markertext="Start", marker_text_offset=1)
-
-        trajectory_fig.add_graph("obstacles_points",
-                                 window_size=8 * (num_pedestrians + num_vehicles) ,
-                                 x0=[0]* (8 * (num_pedestrians + num_vehicles)), 
-                                 y0=[0]* (8 * (num_pedestrians + num_vehicles)),
-                                    linestyle="", marker="+", color='b')
-
-        # Add end position marker
-        trajectory_fig.add_graph("end_pos", window_size=1, 
-                                 x0=[waypoints[-1, 0]], 
-                                 y0=[waypoints[-1, 1]],
-                                 marker="D", color='r', 
-                                 markertext="End", marker_text_offset=1)
-        # Add car marker
-        trajectory_fig.add_graph("car", window_size=1, 
-                                 marker="s", color='b', markertext="Car",
-                                 marker_text_offset=1)
-        # Add lead car information
-        trajectory_fig.add_graph("leadcar", window_size=1, 
-                                 marker="s", color='g', markertext="Lead Car",
-                                 marker_text_offset=1)
-
-        # Add lookahead path
-        trajectory_fig.add_graph("selected_path", 
-                                 window_size=INTERP_MAX_POINTS_PLOT,
-                                 x0=[start_x]*INTERP_MAX_POINTS_PLOT, 
-                                 y0=[start_y]*INTERP_MAX_POINTS_PLOT,
-                                 color=[1, 0.5, 0.0],
-                                 linewidth=3)
-
-        # Add local path proposals
-        for i in range(NUM_PATHS):
-            trajectory_fig.add_graph("local_path " + str(i), window_size=200,
-                                     x0=None, y0=None, color=[0.0, 0.0, 1.0])
-
-        ###
-        # Add 1D speed profile updater
-        ###
-        forward_speed_fig =\
-                lp_1d.plot_new_dynamic_figure(title="Forward Speed (m/s)")
-        forward_speed_fig.add_graph("forward_speed", 
-                                    label="forward_speed", 
-                                    window_size=TOTAL_EPISODE_FRAMES)
-        forward_speed_fig.add_graph("reference_signal", 
-                                    label="reference_Signal", 
-                                    window_size=TOTAL_EPISODE_FRAMES)
-
-        # Add throttle signals graph
-        throttle_fig = lp_1d.plot_new_dynamic_figure(title="Throttle")
-        throttle_fig.add_graph("throttle", 
-                              label="throttle", 
-                              window_size=TOTAL_EPISODE_FRAMES)
-        # Add brake signals graph
-        brake_fig = lp_1d.plot_new_dynamic_figure(title="Brake")
-        brake_fig.add_graph("brake", 
-                              label="brake", 
-                              window_size=TOTAL_EPISODE_FRAMES)
-        # Add steering signals graph
-        steer_fig = lp_1d.plot_new_dynamic_figure(title="Steer")
-        steer_fig.add_graph("steer", 
-                              label="steer", 
-                              window_size=TOTAL_EPISODE_FRAMES)
-
-        # live plotter is disabled, hide windows
-        if not enable_live_plot:
-            lp_traj._root.withdraw()
-            lp_1d._root.withdraw()      
-
-        #############################################
-        # Local Planner Variables
-        #############################################
-        wp_goal_index   = 0
-        local_waypoints = None
-        path_validity   = np.zeros((NUM_PATHS, 1), dtype=bool)
-        lp = local_planner.LocalPlanner(NUM_PATHS,
-                                        PATH_OFFSET,
-                                        CIRCLE_OFFSETS,
-                                        CIRCLE_RADII,
-                                        PATH_SELECT_WEIGHT,
-                                        TIME_GAP,
-                                        A_MAX,
-                                        SLOW_SPEED,
-                                        STOP_LINE_BUFFER)
-        bp = behavioural_planner.BehaviouralPlanner(BP_LOOKAHEAD_BASE,
-                                                    LEAD_VEHICLE_LOOKAHEAD, 
-                                                    traffic_light_info,
-                                                    vehicle_info)
-
-        #############################################
-        # Scenario Execution Loop
-        #############################################
-
-        # Iterate the frames until the end of the waypoints is reached or
-        # the TOTAL_EPISODE_FRAMES is reached. The controller simulation then
-        # ouptuts the results to the controller output directory.
-        reached_the_end = False
-        skip_first_frame = True
-
-        # Initialize the current timestamp.
-        current_timestamp = start_timestamp
-
-        # Initialize collision history
-        prev_collision_vehicles    = 0
-        prev_collision_pedestrians = 0
-        prev_collision_other       = 0
-
-        for frame in range(TOTAL_EPISODE_FRAMES):
-            # Gather current data from the CARLA server
-            measurement_data, sensor_data = client.read_data()
-
-            ###########################################################
-            # ------------------- Visualize Camera --------------------
-            ###########################################################
-            if USE_CAMERA:
-                camera_data = sensor_data.get('CameraRGB', None)
-                if camera_data is not None:
-                    camera_data = to_bgra_array(camera_data)
-                    cv2.imshow("CameraRGB", camera_data)
-
-            ###########################################################
-            # ------------------- State info --------------------------
-            ###########################################################
-            if VISUALIZE_STATE_INFO:
-                state_info.set_state_info(bp.get_state_info())
-
-            ###########################################################
-            # --------------- Read traffic lights info ----------------
-            ###########################################################
+            # Read traffic lights info
             traffic_light_info=dict(position=[], fences=[], states=[])
             for agent in measurement_data.non_player_agents:
                 if agent.HasField('traffic_light'):
-                    # if not(agent.traffic_light.transform.location.x > 70 and agent.traffic_light.transform.location.x < 80) or \
-                    #     not(agent.traffic_light.transform.location.y > -10 and agent.traffic_light.transform.location.y < 10):
-                    #     continue
                     # Get position
                     traffic_light_info['position'].append((agent.traffic_light.transform.location.x, 
-                                                           agent.traffic_light.transform.location.y))
-                    # Get stop line
-                    bb = obstacle_to_world(agent.traffic_light.transform.location,
-                                           DefaultMunch.fromDict(dict(x=TRAFFIC_LIGHT_STOP_LINE_LEN,y=0,z=0)), 
-                                           agent.traffic_light.transform.rotation)
-                    traffic_light_info['fences'].append([*bb[0], *bb[4]])  #### UPDATE THIS
+                                                        agent.traffic_light.transform.location.y))
+                    # Compute stop line
+                    bb = obstacle_to_world(agent.traffic_light.transform.location, 
+                                        DefaultMunch.fromDict(dict(x=TRAFFIC_LIGHT_STOP_LINE_LEN,y=0,z=0)), 
+                                        agent.traffic_light.transform.rotation)
+                    traffic_light_info['fences'].append([*bb[0], *bb[4]])  # 0,1,2 is the right point, 
+                                                                        # 4,5,6 is the left point (are
+                                                                        # the same because the bb is 
+                                                                        # compressed on the y)
                     # Get states
                     traffic_light_info['states'].append(agent.traffic_light.state)
-            bp.set_traffic_light(traffic_light_info)
-
+            # traffic_light_info['visited'] = [False] * len(traffic_light_info['fences'])
+                    
+                
             ###########################################################
             # --------------- Read vehicle info ----------------
             ###########################################################
@@ -971,251 +764,466 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                     vehicle_info['fences'].append(bb)
                     
                     # Get forward speed
-                    vehicle_info['speeds'].append(agent.vehicle.forward_speed)
-            bp.set_vehicle(vehicle_info) 
+                    vehicle_info['speeds'].append(agent.vehicle.forward_speed) 
+                
+            #############################################
+            # Controller 2D Class Declaration
+            #############################################
+            # This is where we take the controller2d.py class
+            # and apply it to the simulator
+            controller = controller2d.Controller2D(waypoints)
 
-            # UPDATE HERE the obstacles list
-            obstacles = []
+            #############################################
+            # Vehicle Trajectory Live Plotting Setup
+            #############################################
+            # Uses the live plotter to generate live feedback during the simulation
+            # The two feedback includes the trajectory feedback and
+            # the controller feedback (which includes the speed tracking).
+            lp_traj = lv.LivePlotter(tk_title="Trajectory Trace")
+            lp_1d = lv.LivePlotter(tk_title="Controls Feedback")
 
-            # Update pose and timestamp
-            prev_timestamp = current_timestamp
-            current_x, current_y, current_z, current_pitch, current_roll, current_yaw = \
-                get_current_pose(measurement_data)
-            current_speed = measurement_data.player_measurements.forward_speed
-            current_timestamp = float(measurement_data.game_timestamp) / 1000.0
+            ###
+            # Add 2D position / trajectory plot
+            ###
+            trajectory_fig = lp_traj.plot_new_dynamic_2d_figure(
+                    title='Vehicle Trajectory',
+                    figsize=(FIGSIZE_X_INCHES, FIGSIZE_Y_INCHES),
+                    edgecolor="black",
+                    rect=[PLOT_LEFT, PLOT_BOT, PLOT_WIDTH, PLOT_HEIGHT])
 
-            # Wait for some initial time before starting the demo
-            if current_timestamp <= WAIT_TIME_BEFORE_START:
-                send_control_command(client, throttle=0.0, steer=0, brake=1.0)
-                continue
-            else:
-                current_timestamp = current_timestamp - WAIT_TIME_BEFORE_START
-            
-            # Store history
-            x_history.append(current_x)
-            y_history.append(current_y)
-            yaw_history.append(current_yaw)
-            speed_history.append(current_speed)
-            time_history.append(current_timestamp) 
+            trajectory_fig.set_invert_x_axis() # Because UE4 uses left-handed 
+                                            # coordinate system the X
+                                            # axis in the graph is flipped
+            trajectory_fig.set_axis_equal()    # X-Y spacing should be equal in size
 
-            # Store collision history
-            collided_flag,\
-            prev_collision_vehicles,\
-            prev_collision_pedestrians,\
-            prev_collision_other = get_player_collided_flag(measurement_data,
-                                                 prev_collision_vehicles,
-                                                 prev_collision_pedestrians,
-                                                 prev_collision_other)
-            collided_flag_history.append(collided_flag)
+            # Add waypoint markers
+            trajectory_fig.add_graph("waypoints", window_size=len(waypoints),
+                                    x0=waypoints[:,0], y0=waypoints[:,1],
+                                    linestyle="-", marker="", color='g')
+            # Add trajectory markers
+            trajectory_fig.add_graph("trajectory", window_size=TOTAL_EPISODE_FRAMES,
+                                    x0=[start_x]*TOTAL_EPISODE_FRAMES, 
+                                    y0=[start_y]*TOTAL_EPISODE_FRAMES,
+                                    color=[1, 0.5, 0])
+            # Add starting position marker
+            trajectory_fig.add_graph("start_pos", window_size=1, 
+                                    x0=[start_x], y0=[start_y],
+                                    marker=11, color=[1, 0.5, 0], 
+                                    markertext="Start", marker_text_offset=1)
 
-            # Execute the behaviour and local planning in the current instance
-            # Note that updating the local path during every controller update
-            # produces issues with the tracking performance (imagine everytime
-            # the controller tried to follow the path, a new path appears). For
-            # this reason, the local planner (LP) will update every X frame,
-            # stored in the variable LP_FREQUENCY_DIVISOR, as it is analogous
-            # to be operating at a frequency that is a division to the 
-            # simulation frequency.
-            if frame % LP_FREQUENCY_DIVISOR == 0:
-                # Compute open loop speed estimate.
-                open_loop_speed = lp._velocity_planner.get_open_loop_speed(current_timestamp - prev_timestamp)
+            trajectory_fig.add_graph("obstacles_points",
+                                    window_size=8 * (num_pedestrians + num_vehicles) ,
+                                    x0=[0]* (8 * (num_pedestrians + num_vehicles)), 
+                                    y0=[0]* (8 * (num_pedestrians + num_vehicles)),
+                                        linestyle="", marker="+", color='b')
 
-                # Calculate the goal state set in the local frame for the local planner.
-                # Current speed should be open loop for the velocity profile generation.
-                ego_state = [current_x, current_y, current_yaw, open_loop_speed]
+            # Add end position marker
+            trajectory_fig.add_graph("end_pos", window_size=1, 
+                                    x0=[waypoints[-1, 0]], 
+                                    y0=[waypoints[-1, 1]],
+                                    marker="D", color='r', 
+                                    markertext="End", marker_text_offset=1)
+            # Add car marker
+            trajectory_fig.add_graph("car", window_size=1, 
+                                    marker="s", color='b', markertext="Car",
+                                    marker_text_offset=1)
+            # Add lead car information
+            trajectory_fig.add_graph("leadcar", window_size=1, 
+                                    marker="s", color='g', markertext="Lead Car",
+                                    marker_text_offset=1)
 
-                # Set lookahead based on current speed.
-                bp.set_lookahead(BP_LOOKAHEAD_BASE + BP_LOOKAHEAD_TIME * open_loop_speed)
+            # Add lookahead path
+            trajectory_fig.add_graph("selected_path", 
+                                    window_size=INTERP_MAX_POINTS_PLOT,
+                                    x0=[start_x]*INTERP_MAX_POINTS_PLOT, 
+                                    y0=[start_y]*INTERP_MAX_POINTS_PLOT,
+                                    color=[1, 0.5, 0.0],
+                                    linewidth=3)
 
-                # Perform a state transition in the behavioural planner.
-                bp.transition_state(waypoints, ego_state, current_speed)
+            # Add local path proposals
+            for i in range(NUM_PATHS):
+                trajectory_fig.add_graph("local_path " + str(i), window_size=200,
+                                        x0=None, y0=None, color=[0.0, 0.0, 1.0])
 
-                # Compute the goal state set from the behavioural planner's computed goal state.
-                goal_state_set = lp.get_goal_state_set(bp._goal_index, bp._goal_state, waypoints, ego_state)
+            ###
+            # Add 1D speed profile updater
+            ###
+            forward_speed_fig =\
+                    lp_1d.plot_new_dynamic_figure(title="Forward Speed (m/s)")
+            forward_speed_fig.add_graph("forward_speed", 
+                                        label="forward_speed", 
+                                        window_size=TOTAL_EPISODE_FRAMES)
+            forward_speed_fig.add_graph("reference_signal", 
+                                        label="reference_Signal", 
+                                        window_size=TOTAL_EPISODE_FRAMES)
 
-                # Calculate planned paths in the local frame.
-                paths, path_validity = lp.plan_paths(goal_state_set)
+            # Add throttle signals graph
+            throttle_fig = lp_1d.plot_new_dynamic_figure(title="Throttle")
+            throttle_fig.add_graph("throttle", 
+                                label="throttle", 
+                                window_size=TOTAL_EPISODE_FRAMES)
+            # Add brake signals graph
+            brake_fig = lp_1d.plot_new_dynamic_figure(title="Brake")
+            brake_fig.add_graph("brake", 
+                                label="brake", 
+                                window_size=TOTAL_EPISODE_FRAMES)
+            # Add steering signals graph
+            steer_fig = lp_1d.plot_new_dynamic_figure(title="Steer")
+            steer_fig.add_graph("steer", 
+                                label="steer", 
+                                window_size=TOTAL_EPISODE_FRAMES)
 
-                # Transform those paths back to the global frame.
-                paths = local_planner.transform_paths(paths, ego_state)
+            # live plotter is disabled, hide windows
+            if not enable_live_plot:
+                lp_traj._root.withdraw()
+                lp_1d._root.withdraw()      
 
-                # Perform collision checking.
-                collision_check_array = lp._collision_checker.collision_check(paths, [])
+            #############################################
+            # Local Planner Variables
+            #############################################
+            wp_goal_index   = 0
+            local_waypoints = None
+            path_validity   = np.zeros((NUM_PATHS, 1), dtype=bool)
+            lp = local_planner.LocalPlanner(NUM_PATHS,
+                                            PATH_OFFSET,
+                                            CIRCLE_OFFSETS,
+                                            CIRCLE_RADII,
+                                            PATH_SELECT_WEIGHT,
+                                            TIME_GAP,
+                                            A_MAX,
+                                            SLOW_SPEED,
+                                            STOP_LINE_BUFFER)
+            bp = behavioural_planner.BehaviouralPlanner(BP_LOOKAHEAD_BASE,
+                                                        LEAD_VEHICLE_LOOKAHEAD, 
+                                                        traffic_light_info,
+                                                        vehicle_info)
 
-                # Compute the best local path.
-                best_index = lp._collision_checker.select_best_path_index(paths, collision_check_array, bp._goal_state)
-                # If no path was feasible, continue to follow the previous best path.
-                if best_index == None:
-                    best_path = lp._prev_best_path
-                else:
-                    best_path = paths[best_index]
-                    lp._prev_best_path = best_path
+            #############################################
+            # Scenario Execution Loop
+            #############################################
 
-                if best_path is not None:
-                    # Compute the velocity profile for the path, and compute the waypoints.
-                    desired_speed = bp._goal_state[2]
-                    decelerate_to_stop = bp._state == behavioural_planner.DECELERATE_TO_STOP
-                    local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_stop, bp._lead_car_state, bp._follow_lead_vehicle)
+            # Iterate the frames until the end of the waypoints is reached or
+            # the TOTAL_EPISODE_FRAMES is reached. The controller simulation then
+            # ouptuts the results to the controller output directory.
+            reached_the_end = False
+            skip_first_frame = True
 
-                    if local_waypoints != None:
-                        # Update the controller waypoint path with the best local path.
-                        # This controller is similar to that developed in Course 1 of this
-                        # specialization.  Linear interpolation computation on the waypoints
-                        # is also used to ensure a fine resolution between points.
-                        wp_distance = []   # distance array
-                        local_waypoints_np = np.array(local_waypoints)
-                        for i in range(1, local_waypoints_np.shape[0]):
-                            wp_distance.append(
-                                    np.sqrt((local_waypoints_np[i, 0] - local_waypoints_np[i-1, 0])**2 +
-                                            (local_waypoints_np[i, 1] - local_waypoints_np[i-1, 1])**2))
-                        wp_distance.append(0)  # last distance is 0 because it is the distance
-                                            # from the last waypoint to the last waypoint
+            # Initialize the current timestamp.
+            current_timestamp = start_timestamp
 
-                        # Linearly interpolate between waypoints and store in a list
-                        wp_interp      = []    # interpolated values 
-                                            # (rows = waypoints, columns = [x, y, v])
-                        for i in range(local_waypoints_np.shape[0] - 1):
-                            # Add original waypoint to interpolated waypoints list (and append
-                            # it to the hash table)
-                            wp_interp.append(list(local_waypoints_np[i]))
-                    
-                            # Interpolate to the next waypoint. First compute the number of
-                            # points to interpolate based on the desired resolution and
-                            # incrementally add interpolated points until the next waypoint
-                            # is about to be reached.
-                            num_pts_to_interp = int(np.floor(wp_distance[i] /\
-                                                        float(INTERP_DISTANCE_RES)) - 1)
-                            wp_vector = local_waypoints_np[i+1] - local_waypoints_np[i]
-                            wp_uvector = wp_vector / np.linalg.norm(wp_vector[0:2])
+            # Initialize collision history
+            prev_collision_vehicles    = 0
+            prev_collision_pedestrians = 0
+            prev_collision_other       = 0
 
-                            for j in range(num_pts_to_interp):
-                                next_wp_vector = INTERP_DISTANCE_RES * float(j+1) * wp_uvector
-                                wp_interp.append(list(local_waypoints_np[i] + next_wp_vector))
-                        # add last waypoint at the end
-                        wp_interp.append(list(local_waypoints_np[-1]))
+            for frame in range(TOTAL_EPISODE_FRAMES):
+                # Gather current data from the CARLA server
+                measurement_data, sensor_data = client.read_data()
+
+                ###########################################################
+                # ------------------- Visualize Camera --------------------
+                ###########################################################
+                if USE_CAMERA:
+                    camera_data = sensor_data.get('CameraRGB', None)
+                    if camera_data is not None:
+                        camera_data = to_bgra_array(camera_data)
+                        cv2.imshow("CameraRGB", camera_data)
+
+                ###########################################################
+                # ------------------- State info --------------------------
+                ###########################################################
+                if VISUALIZE_STATE_INFO:
+                    state_info.set_state_info(bp.get_state_info())
+
+                ###########################################################
+                # --------------- Read traffic lights info ----------------
+                ###########################################################
+                traffic_light_info=dict(position=[], fences=[], states=[])
+                for agent in measurement_data.non_player_agents:
+                    if agent.HasField('traffic_light'):
+                        # if not(agent.traffic_light.transform.location.x > 70 and agent.traffic_light.transform.location.x < 80) or \
+                        #     not(agent.traffic_light.transform.location.y > -10 and agent.traffic_light.transform.location.y < 10):
+                        #     continue
+                        # Get position
+                        traffic_light_info['position'].append((agent.traffic_light.transform.location.x, 
+                                                            agent.traffic_light.transform.location.y))
+                        # Get stop line
+                        bb = obstacle_to_world(agent.traffic_light.transform.location,
+                                            DefaultMunch.fromDict(dict(x=TRAFFIC_LIGHT_STOP_LINE_LEN,y=0,z=0)), 
+                                            agent.traffic_light.transform.rotation)
+                        traffic_light_info['fences'].append([*bb[0], *bb[4]])  #### UPDATE THIS
+                        # Get states
+                        traffic_light_info['states'].append(agent.traffic_light.state)
+                bp.set_traffic_light(traffic_light_info)
+
+                ###########################################################
+                # --------------- Read vehicle info ----------------
+                ###########################################################
+                vehicle_info=dict(position=[], fences=[], speeds=[])
+                for agent in measurement_data.non_player_agents:
+                    if agent.HasField('vehicle'):
+                        # Get position
+                        vehicle_info['position'].append((agent.vehicle.transform.location.x, 
+                                                            agent.vehicle.transform.location.y, 
+                                                            agent.vehicle.transform.location.z))
+                        # Compute stop line
+                        bb = obstacle_to_world(agent.vehicle.transform.location, 
+                                                    agent.vehicle.bounding_box.extent, 
+                                                    agent.vehicle.transform.rotation)
+                        vehicle_info['fences'].append(bb)
                         
-                        # Update the other controller values and controls
-                        controller.update_waypoints(wp_interp)
+                        # Get forward speed
+                        vehicle_info['speeds'].append(agent.vehicle.forward_speed)
+                bp.set_vehicle(vehicle_info) 
 
-            ###
-            # Controller Update
-            ###
-            if local_waypoints != None and local_waypoints != []:
-                controller.update_values(current_x, current_y, current_yaw, 
-                                         current_speed,
-                                         current_timestamp, frame)
-                controller.update_controls()
-                cmd_throttle, cmd_steer, cmd_brake = controller.get_commands()
-            else:
-                cmd_throttle = 0.0
-                cmd_steer = 0.0
-                cmd_brake = 0.0
+                # UPDATE HERE the obstacles list
+                obstacles = []
 
-            # Skip the first frame or if there exists no local paths
-            if skip_first_frame and frame == 0:
-                pass
-            elif local_waypoints == None:
-                pass
-            else:
-                # Update live plotter with new feedback
-                trajectory_fig.roll("trajectory", current_x, current_y) 
-                trajectory_fig.roll("car", current_x, current_y) 
+                # Update pose and timestamp
+                prev_timestamp = current_timestamp
+                current_x, current_y, current_z, current_pitch, current_roll, current_yaw = \
+                    get_current_pose(measurement_data)
+                current_speed = measurement_data.player_measurements.forward_speed
+                current_timestamp = float(measurement_data.game_timestamp) / 1000.0
+
+                # Wait for some initial time before starting the demo
+                if current_timestamp <= WAIT_TIME_BEFORE_START:
+                    send_control_command(client, throttle=0.0, steer=0, brake=1.0)
+                    continue
+                else:
+                    current_timestamp = current_timestamp - WAIT_TIME_BEFORE_START
                 
-                # Load parked car points
-                if len(obstacles) > 0:
-                    x = obstacles[:,:,0]
-                    y = obstacles[:,:,1]
-                    x = np.reshape(x, x.shape[0] * x.shape[1])
-                    y = np.reshape(y, y.shape[0] * y.shape[1])
+                # Store history
+                x_history.append(current_x)
+                y_history.append(current_y)
+                yaw_history.append(current_yaw)
+                speed_history.append(current_speed)
+                time_history.append(current_timestamp) 
 
-                    trajectory_fig.roll("obstacles_points", x, y)
+                # Store collision history
+                collided_flag,\
+                prev_collision_vehicles,\
+                prev_collision_pedestrians,\
+                prev_collision_other = get_player_collided_flag(measurement_data,
+                                                    prev_collision_vehicles,
+                                                    prev_collision_pedestrians,
+                                                    prev_collision_other)
+                collided_flag_history.append(collided_flag)
 
-                
-                forward_speed_fig.roll("forward_speed", 
-                                       current_timestamp, 
-                                       current_speed)
-                forward_speed_fig.roll("reference_signal", 
-                                       current_timestamp, 
-                                       controller._desired_speed)
-                throttle_fig.roll("throttle", current_timestamp, cmd_throttle)
-                brake_fig.roll("brake", current_timestamp, cmd_brake)
-                steer_fig.roll("steer", current_timestamp, cmd_steer)
-
-                # Local path plotter update
+                # Execute the behaviour and local planning in the current instance
+                # Note that updating the local path during every controller update
+                # produces issues with the tracking performance (imagine everytime
+                # the controller tried to follow the path, a new path appears). For
+                # this reason, the local planner (LP) will update every X frame,
+                # stored in the variable LP_FREQUENCY_DIVISOR, as it is analogous
+                # to be operating at a frequency that is a division to the 
+                # simulation frequency.
                 if frame % LP_FREQUENCY_DIVISOR == 0:
-                    path_counter = 0
-                    for i in range(NUM_PATHS):
-                        # If a path was invalid in the set, there is no path to plot.
-                        if path_validity[i]:
-                            # Colour paths according to collision checking.
-                            if not collision_check_array[path_counter]:
-                                colour = 'r'
-                            elif i == best_index:
-                                colour = 'k'
+                    # Compute open loop speed estimate.
+                    open_loop_speed = lp._velocity_planner.get_open_loop_speed(current_timestamp - prev_timestamp)
+
+                    # Calculate the goal state set in the local frame for the local planner.
+                    # Current speed should be open loop for the velocity profile generation.
+                    ego_state = [current_x, current_y, current_yaw, open_loop_speed]
+
+                    # Set lookahead based on current speed.
+                    bp.set_lookahead(BP_LOOKAHEAD_BASE + BP_LOOKAHEAD_TIME * open_loop_speed)
+
+                    # Perform a state transition in the behavioural planner.
+                    bp.transition_state(waypoints, ego_state, current_speed)
+
+                    # Compute the goal state set from the behavioural planner's computed goal state.
+                    goal_state_set = lp.get_goal_state_set(bp._goal_index, bp._goal_state, waypoints, ego_state)
+
+                    # Calculate planned paths in the local frame.
+                    paths, path_validity = lp.plan_paths(goal_state_set)
+
+                    # Transform those paths back to the global frame.
+                    paths = local_planner.transform_paths(paths, ego_state)
+
+                    # Perform collision checking.
+                    collision_check_array = lp._collision_checker.collision_check(paths, [])
+
+                    # Compute the best local path.
+                    best_index = lp._collision_checker.select_best_path_index(paths, collision_check_array, bp._goal_state)
+                    # If no path was feasible, continue to follow the previous best path.
+                    if best_index == None:
+                        best_path = lp._prev_best_path
+                    else:
+                        best_path = paths[best_index]
+                        lp._prev_best_path = best_path
+
+                    if best_path is not None:
+                        # Compute the velocity profile for the path, and compute the waypoints.
+                        desired_speed = bp._goal_state[2]
+                        decelerate_to_stop = bp._state == behavioural_planner.DECELERATE_TO_STOP
+                        local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_stop, bp._lead_car_state, bp._follow_lead_vehicle)
+
+                        if local_waypoints != None:
+                            # Update the controller waypoint path with the best local path.
+                            # This controller is similar to that developed in Course 1 of this
+                            # specialization.  Linear interpolation computation on the waypoints
+                            # is also used to ensure a fine resolution between points.
+                            wp_distance = []   # distance array
+                            local_waypoints_np = np.array(local_waypoints)
+                            for i in range(1, local_waypoints_np.shape[0]):
+                                wp_distance.append(
+                                        np.sqrt((local_waypoints_np[i, 0] - local_waypoints_np[i-1, 0])**2 +
+                                                (local_waypoints_np[i, 1] - local_waypoints_np[i-1, 1])**2))
+                            wp_distance.append(0)  # last distance is 0 because it is the distance
+                                                # from the last waypoint to the last waypoint
+
+                            # Linearly interpolate between waypoints and store in a list
+                            wp_interp      = []    # interpolated values 
+                                                # (rows = waypoints, columns = [x, y, v])
+                            for i in range(local_waypoints_np.shape[0] - 1):
+                                # Add original waypoint to interpolated waypoints list (and append
+                                # it to the hash table)
+                                wp_interp.append(list(local_waypoints_np[i]))
+                        
+                                # Interpolate to the next waypoint. First compute the number of
+                                # points to interpolate based on the desired resolution and
+                                # incrementally add interpolated points until the next waypoint
+                                # is about to be reached.
+                                num_pts_to_interp = int(np.floor(wp_distance[i] /\
+                                                            float(INTERP_DISTANCE_RES)) - 1)
+                                wp_vector = local_waypoints_np[i+1] - local_waypoints_np[i]
+                                wp_uvector = wp_vector / np.linalg.norm(wp_vector[0:2])
+
+                                for j in range(num_pts_to_interp):
+                                    next_wp_vector = INTERP_DISTANCE_RES * float(j+1) * wp_uvector
+                                    wp_interp.append(list(local_waypoints_np[i] + next_wp_vector))
+                            # add last waypoint at the end
+                            wp_interp.append(list(local_waypoints_np[-1]))
+                            
+                            # Update the other controller values and controls
+                            controller.update_waypoints(wp_interp)
+
+                ###
+                # Controller Update
+                ###
+                if local_waypoints != None and local_waypoints != []:
+                    controller.update_values(current_x, current_y, current_yaw, 
+                                            current_speed,
+                                            current_timestamp, frame)
+                    controller.update_controls()
+                    cmd_throttle, cmd_steer, cmd_brake = controller.get_commands()
+                else:
+                    cmd_throttle = 0.0
+                    cmd_steer = 0.0
+                    cmd_brake = 0.0
+
+                # Skip the first frame or if there exists no local paths
+                if skip_first_frame and frame == 0:
+                    pass
+                elif local_waypoints == None:
+                    pass
+                else:
+                    # Update live plotter with new feedback
+                    trajectory_fig.roll("trajectory", current_x, current_y) 
+                    trajectory_fig.roll("car", current_x, current_y) 
+                    
+                    # Load parked car points
+                    if len(obstacles) > 0:
+                        x = obstacles[:,:,0]
+                        y = obstacles[:,:,1]
+                        x = np.reshape(x, x.shape[0] * x.shape[1])
+                        y = np.reshape(y, y.shape[0] * y.shape[1])
+
+                        trajectory_fig.roll("obstacles_points", x, y)
+
+                    
+                    forward_speed_fig.roll("forward_speed", 
+                                        current_timestamp, 
+                                        current_speed)
+                    forward_speed_fig.roll("reference_signal", 
+                                        current_timestamp, 
+                                        controller._desired_speed)
+                    throttle_fig.roll("throttle", current_timestamp, cmd_throttle)
+                    brake_fig.roll("brake", current_timestamp, cmd_brake)
+                    steer_fig.roll("steer", current_timestamp, cmd_steer)
+
+                    # Local path plotter update
+                    if frame % LP_FREQUENCY_DIVISOR == 0:
+                        path_counter = 0
+                        for i in range(NUM_PATHS):
+                            # If a path was invalid in the set, there is no path to plot.
+                            if path_validity[i]:
+                                # Colour paths according to collision checking.
+                                if not collision_check_array[path_counter]:
+                                    colour = 'r'
+                                elif i == best_index:
+                                    colour = 'k'
+                                else:
+                                    colour = 'b'
+                                trajectory_fig.update("local_path " + str(i), paths[path_counter][0], paths[path_counter][1], colour)
+                                path_counter += 1
                             else:
-                                colour = 'b'
-                            trajectory_fig.update("local_path " + str(i), paths[path_counter][0], paths[path_counter][1], colour)
-                            path_counter += 1
-                        else:
-                            trajectory_fig.update("local_path " + str(i), [ego_state[0]], [ego_state[1]], 'r')
-                # When plotting lookahead path, only plot a number of points
-                # (INTERP_MAX_POINTS_PLOT amount of points). This is meant
-                # to decrease load when live plotting
-                wp_interp_np = np.array(wp_interp)
-                path_indices = np.floor(np.linspace(0, 
-                                                    wp_interp_np.shape[0]-1,
-                                                    INTERP_MAX_POINTS_PLOT))
-                trajectory_fig.update("selected_path", 
-                        wp_interp_np[path_indices.astype(int), 0],
-                        wp_interp_np[path_indices.astype(int), 1],
-                        new_colour=[1, 0.5, 0.0])
+                                trajectory_fig.update("local_path " + str(i), [ego_state[0]], [ego_state[1]], 'r')
+                    # When plotting lookahead path, only plot a number of points
+                    # (INTERP_MAX_POINTS_PLOT amount of points). This is meant
+                    # to decrease load when live plotting
+                    wp_interp_np = np.array(wp_interp)
+                    path_indices = np.floor(np.linspace(0, 
+                                                        wp_interp_np.shape[0]-1,
+                                                        INTERP_MAX_POINTS_PLOT))
+                    trajectory_fig.update("selected_path", 
+                            wp_interp_np[path_indices.astype(int), 0],
+                            wp_interp_np[path_indices.astype(int), 1],
+                            new_colour=[1, 0.5, 0.0])
 
 
-                # Refresh the live plot based on the refresh rate 
-                # set by the options
-                if enable_live_plot and \
-                   live_plot_timer.has_exceeded_lap_period():
-                    lp_traj.refresh()
-                    lp_1d.refresh()
-                    live_plot_timer.lap()
+                    # Refresh the live plot based on the refresh rate 
+                    # set by the options
+                    if enable_live_plot and \
+                    live_plot_timer.has_exceeded_lap_period():
+                        lp_traj.refresh()
+                        lp_1d.refresh()
+                        live_plot_timer.lap()
 
-            # Output controller command to CARLA server
-            send_control_command(client,
-                                 throttle=cmd_throttle,
-                                 steer=cmd_steer,
-                                 brake=cmd_brake)
+                # Output controller command to CARLA server
+                send_control_command(client,
+                                    throttle=cmd_throttle,
+                                    steer=cmd_steer,
+                                    brake=cmd_brake)
 
-            # Find if reached the end of waypoint. If the car is within
-            # DIST_THRESHOLD_TO_LAST_WAYPOINT to the last waypoint,
-            # the simulation will end.
-            dist_to_last_waypoint = np.linalg.norm(np.array([
-                waypoints[-1][0] - current_x,
-                waypoints[-1][1] - current_y]))
-            if  dist_to_last_waypoint < DIST_THRESHOLD_TO_LAST_WAYPOINT:
-                reached_the_end = True
+                # Find if reached the end of waypoint. If the car is within
+                # DIST_THRESHOLD_TO_LAST_WAYPOINT to the last waypoint,
+                # the simulation will end.
+                dist_to_last_waypoint = np.linalg.norm(np.array([
+                    waypoints[-1][0] - current_x,
+                    waypoints[-1][1] - current_y]))
+                if  dist_to_last_waypoint < DIST_THRESHOLD_TO_LAST_WAYPOINT:
+                    reached_the_end = True
+                if reached_the_end:
+                    break
+
+            # End of demo - Stop vehicle and Store outputs to the controller output
+            # directory.
             if reached_the_end:
-                break
+                print("Reached the end of path. Writing to controller_output...")
+            else:
+                print("Exceeded assessment time. Writing to controller_output...")
+            # Stop the car
+            send_control_command(client, throttle=0.0, steer=0.0, brake=1.0)
+            # Store the various outputs
+            store_trajectory_plot(trajectory_fig.fig, 'trajectory.png')
+            store_trajectory_plot(forward_speed_fig.fig, 'forward_speed.png')
+            store_trajectory_plot(throttle_fig.fig, 'throttle_output.png')
+            store_trajectory_plot(brake_fig.fig, 'brake_output.png')
+            store_trajectory_plot(steer_fig.fig, 'steer_output.png')
+            write_trajectory_file(x_history, y_history, speed_history, time_history,
+                                collided_flag_history)
+            write_collisioncount_file(collided_flag_history)
 
-        # End of demo - Stop vehicle and Store outputs to the controller output
-        # directory.
-        if reached_the_end:
-            print("Reached the end of path. Writing to controller_output...")
-        else:
-            print("Exceeded assessment time. Writing to controller_output...")
-        # Stop the car
-        send_control_command(client, throttle=0.0, steer=0.0, brake=1.0)
-        # Store the various outputs
-        store_trajectory_plot(trajectory_fig.fig, 'trajectory.png')
-        store_trajectory_plot(forward_speed_fig.fig, 'forward_speed.png')
-        store_trajectory_plot(throttle_fig.fig, 'throttle_output.png')
-        store_trajectory_plot(brake_fig.fig, 'brake_output.png')
-        store_trajectory_plot(steer_fig.fig, 'steer_output.png')
-        write_trajectory_file(x_history, y_history, speed_history, time_history,
-                              collided_flag_history)
-        write_collisioncount_file(collided_flag_history)
+            lp_traj._root.destroy()
+            lp_1d._root.destroy()
 
+    except KeyboardInterrupt as e:
         lp_traj._root.destroy()
         lp_1d._root.destroy()
+        raise e
+
     
 def main():
     """Main function.
@@ -1333,13 +1341,18 @@ def main():
 
                         try:
                             exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians, num_vehicles, seed_pedestrians, seed_vehicles)
+                            pbar.update()  # Update progress bar
                         except TCPConnectionError as error:
                             logging.error(error)
                             logging.error(f"Simulation with param {list(zip(('start_wp', 'stop_wp', 'num_pedestrians', 'num_vehicles', 'seed_pedestrians', 'seed_vehicles'),(start_wp, stop_wp, num_pedestrians, num_vehicles, seed_pedestrians, seed_vehicles)))} not executed")
-                            return
+                            pbar.update()  # Update progress bar
+                        except KeyboardInterrupt:
+                            _print('\nSkipping this scene. To exit, click CTRL+C another time.')
+                            time.sleep(2)
+                            pbar.update()  # Update progress bar
                         finally:
                             state_info.quit()
-                            pbar.update()  # Update progress bar
+                            
     
     pbar.close()   # Finalize Progress bar
 
