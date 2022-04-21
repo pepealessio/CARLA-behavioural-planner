@@ -112,11 +112,11 @@ class BehaviouralPlanner:
         self._state_info = f'Current State: {"FOLLOW_LANE" if self._state == 0 else "DECELERATE" if self._state == 1 else "STOPPED"}' + \
             f'\n\nCurrent Input:' + \
             f'\n  - ego-state: {[round(x, 2) for x in ego_state]}' + \
-            f'\n  - Traffic lights: {"no" if not traffic_light_present else ""}'
-        self._state_info += f'{"green" if traffic_light_state == 0 else "yellow" if traffic_light_state == 1 else "red"}' + \
-                            f', distance: {round(distance_from_traffic_lights, 2)} m' if traffic_light_present else ''
-        self._state_info += f'\n  - Lead vehicle: {"no" if not vehicle_presence else ""}'
-        self._state_info += f'{[round(x, 2) for x in vehicle_position]}, speed: {round(vehicle_speed, 2)} m/s, distance: {round(dist_from_vehicle, 2)} m' if vehicle_presence else ''
+            f'\n  - Traffic lights: {"no" if not traffic_light_present else ""}' + \
+            (f'{"green" if traffic_light_state == 0 else "yellow" if traffic_light_state == 1 else "red"}' + \
+             f', distance: {round(distance_from_traffic_lights, 2)} m' if traffic_light_present else '') + \
+            (f'\n  - Lead vehicle: {"no" if not vehicle_presence else ""}') + \
+            (f'{[round(x, 2) for x in vehicle_position]}, speed: {round(vehicle_speed, 2)} m/s, distance: {round(dist_from_vehicle, 2)} m' if vehicle_presence else '')
 
         if vehicle_presence:
             self._follow_lead_vehicle = True
