@@ -10,6 +10,7 @@ import argparse
 import logging
 import time
 import math
+from matplotlib import markers
 import numpy as np
 import csv
 import matplotlib.pyplot as plt
@@ -25,6 +26,11 @@ from munch import DefaultMunch
 import tkinter as tk
 import threading
 from tqdm import tqdm
+from shapely.geometry import Point, LineString, Polygon
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+# Implement the default Matplotlib key bindings.
+from matplotlib.backend_bases import key_press_handler
+from matplotlib.figure import Figure
 
 # Script level imports
 sys.path.append(os.path.abspath(sys.path[0] + '/..'))
@@ -164,11 +170,12 @@ class StateInfo(threading.Thread):
             # Build the window
             self._root = tk.Tk()
             self._root.protocol("WM_DELETE_WINDOW", self._callback)
-            self._root.geometry("600x300")
+            self._root.geometry("1300x400")
             self._root.title("FSM info")
             self._root.configure(background='white')
 
             self._root.grid_columnconfigure(0, weight=1)
+            self._root.grid_columnconfigure(1, weight=1)
             self._root.grid_rowconfigure(1, weight=1)
             self._root.grid_rowconfigure(3, weight=1)
 
@@ -187,6 +194,18 @@ class StateInfo(threading.Thread):
             self.set_state_info('loading ...')
             self._text['bg'] = 'white'
             self._text.grid(row=3, column=0, sticky='nswe')
+            
+            self._draw = tk.PanedWindow(self._root)
+            
+            self._fig = Figure(figsize=(5, 5), dpi=100)
+            self._ax = self._fig.add_subplot(111)
+
+            self._canvas = FigureCanvasTkAgg(self._fig, master=self._draw)  # A tk.DrawingArea.
+            self._canvas.draw()
+            self._canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+            self._canvas.show()
+
+            self._draw.grid(row=0, column=1, rowspan=4, sticky='nswe')
 
             # Start the window in the thread to not stop the main
             self.start()
@@ -198,7 +217,7 @@ class StateInfo(threading.Thread):
         # The try structure is needed to avoid the RuntimeError who inform that the root window will be executed in a non-main thread.
         try:
             self._root.mainloop()
-        except RuntimeError:
+        except KeyboardInterrupt: # RuntimeError:
             pass
 
     def set_param_info(self, info):
@@ -212,6 +231,13 @@ class StateInfo(threading.Thread):
         if self._show_on:
             self._text.delete('1.0', tk.END)
             self._text.insert(tk.END, info)
+
+    def draw_things(self, *args):
+        """Draw in the live plt image."""
+        for arg in args:
+            self._ax.plot(*arg[0], color=arg[1], marker='.', markersize=20)
+        self._canvas.draw()
+        self._ax.clear()
 
     def quit(self):
         """Destroy the window"""
@@ -934,6 +960,7 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                 ###########################################################
                 if VISUALIZE_STATE_INFO:
                     state_info.set_state_info(bp.get_state_info())
+                    state_info.draw_things(*bp.get_to_draw())
 
                 ###########################################################
                 # --------------- Read traffic lights info ----------------
