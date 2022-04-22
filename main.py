@@ -63,7 +63,7 @@ SEED_VEHICLES          = 0      # seed for vehicle spawn randomizer
 ###############################################################################
 # ---------------------- PERSONAL ---------------------------------------------
 ###############################################################################
-USE_CAMERA = True      # See the car camera (useful in non-local server)
+USE_CAMERA = False      # See the car camera (useful in non-local server)
 VISUALIZE_STATE_INFO = True  # See a window with the state info
 TRAFFIC_LIGHT_STOP_LINE_LEN = 4     # The lenght of the stop line for traffic lights
 ###############################################################################
@@ -167,18 +167,16 @@ class StateInfo(threading.Thread):
             # Build the window
             self._root = tk.Tk()
             self._root.protocol("WM_DELETE_WINDOW", self._callback)
-            self._root.geometry("1300x400")
+            self._root.geometry("600x350")
             self._root.title("FSM info")
             self._root.configure(background='white')
 
             self._root.grid_columnconfigure(0, weight=1)
-            self._root.grid_columnconfigure(1, weight=1)
-            self._root.grid_rowconfigure(1, weight=1)
             self._root.grid_rowconfigure(3, weight=1)
 
             tk.Label(self._root, text='Simulation params:', font=("Microsoft YaHei UI", 16), bg='white', anchor="w").grid(row=0, column=0, sticky='nswe')
 
-            self._param_text = tk.Text(self._root, width=15, height=0, font=("Microsoft YaHei UI Light", 13))
+            self._param_text = tk.Text(self._root, width=15, height=0, font=("Microsoft YaHei UI Light", 11))
             self._param_text.bind("<Key>", lambda e: "break")
             self.set_param_info('loading ...')
             self._param_text['bg'] = 'white'
@@ -186,25 +184,12 @@ class StateInfo(threading.Thread):
 
             tk.Label(self._root, text='Behavioural Planner info:', font=("Microsoft YaHei UI", 16), bg='white', anchor="w").grid(row=2, column=0, sticky='nswe')
 
-            self._text = tk.Text(self._root, width=15, height=8, font=("Microsoft YaHei UI Light", 13))
+            self._text = tk.Text(self._root, width=15, height=8, font=("Microsoft YaHei UI Light", 11))
             self._text.bind("<Key>", lambda e: "break")
             self.set_state_info('loading ...')
             self._text['bg'] = 'white'
             self._text.grid(row=3, column=0, sticky='nswe')
             
-            self._draw = tk.PanedWindow(self._root)
-            
-            self._fig = Figure(figsize=(5, 5), dpi=100)
-            self._ax = self._fig.add_subplot(111)
-
-            self._canvas = FigureCanvasTkAgg(self._fig, master=self._draw)  # A tk.DrawingArea.
-            self._canvas.draw()
-            self._canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
-            self._canvas.show()
-
-            self._draw.grid(row=0, column=1, rowspan=4, sticky='nswe')
-
-            # Start the window in the thread to not stop the main
             self.start()
 
     def _callback(self):
@@ -228,14 +213,6 @@ class StateInfo(threading.Thread):
         if self._show_on:
             self._text.delete('1.0', tk.END)
             self._text.insert(tk.END, info)
-
-    def draw_things(self, *args):
-        """Draw in the live plt image."""
-        for arg in args:
-            self._ax.plot(*arg[0], **arg[1])
-            self._ax.legend()
-        self._canvas.draw()
-        self._ax.clear()
 
     def quit(self):
         """Destroy the window"""
@@ -770,7 +747,6 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                     traffic_light_info['states'].append(agent.traffic_light.state)
             # traffic_light_info['visited'] = [False] * len(traffic_light_info['fences'])
                     
-                
             ###########################################################
             # --------------- Read vehicle info ----------------
             ###########################################################
@@ -788,7 +764,26 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                     vehicle_info['fences'].append(bb)
                     
                     # Get forward speed
-                    vehicle_info['speeds'].append(agent.vehicle.forward_speed) 
+                    vehicle_info['speeds'].append(agent.vehicle.forward_speed)
+
+            ###########################################################
+            # --------------- Read pedestrian info ----------------
+            ###########################################################
+            pedestrian_info=dict(position=[], fences=[], speeds=[])
+            for agent in measurement_data.non_player_agents:
+                if agent.HasField('pedestrian'):
+                    # Get position
+                    pedestrian_info['position'].append((agent.pedestrian.transform.location.x, 
+                                                        agent.pedestrian.transform.location.y, 
+                                                        agent.pedestrian.transform.location.z))
+                    # Compute stop line
+                    bb = obstacle_to_world(agent.pedestrian.transform.location, 
+                                                agent.pedestrian.bounding_box.extent, 
+                                                agent.pedestrian.transform.rotation)
+                    pedestrian_info['fences'].append(bb)
+                    
+                    # Get forward speed
+                    pedestrian_info['speeds'].append(agent.pedestrian.forward_speed) 
                 
             #############################################
             # Controller 2D Class Declaration
@@ -920,7 +915,8 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
             bp = behavioural_planner.BehaviouralPlanner(BP_LOOKAHEAD_BASE,
                                                         LEAD_VEHICLE_LOOKAHEAD, 
                                                         traffic_light_info,
-                                                        vehicle_info)
+                                                        vehicle_info,
+                                                        pedestrian_info)
 
             #############################################
             # Scenario Execution Loop
@@ -958,7 +954,6 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                 ###########################################################
                 if VISUALIZE_STATE_INFO:
                     state_info.set_state_info(bp.get_state_info())
-                    state_info.draw_things(*bp.get_to_draw())
 
                 ###########################################################
                 # --------------- Read traffic lights info ----------------
@@ -1000,6 +995,27 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                         # Get forward speed
                         vehicle_info['speeds'].append(agent.vehicle.forward_speed)
                 bp.set_vehicle(vehicle_info) 
+
+                ###########################################################
+                # --------------- Read pedestrian info ----------------
+                ###########################################################
+                pedestrian_info=dict(position=[], fences=[], speeds=[])
+                for agent in measurement_data.non_player_agents:
+                    if agent.HasField('pedestrian'):
+                        # Get position
+                        pedestrian_info['position'].append((agent.pedestrian.transform.location.x, 
+                                                            agent.pedestrian.transform.location.y, 
+                                                            agent.pedestrian.transform.location.z))
+                        # Compute stop line
+                        bb = obstacle_to_world(agent.pedestrian.transform.location, 
+                                                    agent.pedestrian.bounding_box.extent, 
+                                                    agent.pedestrian.transform.rotation)
+                        pedestrian_info['fences'].append(bb)
+                        
+                        # Get forward speed
+                        pedestrian_info['speeds'].append(agent.pedestrian.forward_speed) 
+                bp.set_pedestrians(pedestrian_info)
+                    
 
                 # UPDATE HERE the obstacles list
                 obstacles = []
