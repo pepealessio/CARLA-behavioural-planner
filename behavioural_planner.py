@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-from turtle import distance, position
+from turtle import distance, position, shape
 from unicodedata import decimal
+from matplotlib import markers
+from matplotlib.pyplot import legend
 import numpy as np
 import math
 from shapely.geometry import Point, LineString, Polygon
@@ -58,6 +60,12 @@ class BehaviouralPlanner:
         self._to_draw = []
         return to_ret
 
+    def draw(self, obj, setting_dict):
+        for e in self._to_draw:
+            if e == obj:
+                return
+        self._to_draw.append((obj, setting_dict))
+
     # Handles state transitions and computes the goal state.
     def transition_state(self, waypoints, ego_state, closed_loop_speed):
         """Handles state transitions and computes the goal state.  
@@ -100,6 +108,8 @@ class BehaviouralPlanner:
             STOP_COUNTS     : Number of cycles (simulation iterations) 
                               before moving from stop sign.
         """
+        # Draw the ego-state
+        self.draw(Point(ego_state[0], ego_state[1]).coords.xy, dict(color='#8dc576', marker='.', markersize=20, label='ego state'))
 
         # Get closest waypoint
         closest_len, closest_index = get_closest_index(waypoints, ego_state)
@@ -285,7 +295,9 @@ class BehaviouralPlanner:
 
         # Otherwise, find our next waypoint.
         while wp_index < len(waypoints) - 1:
-            arc_length += np.sqrt((waypoints[wp_index][0] - waypoints[wp_index+1][0])**2 + (waypoints[wp_index][1] - waypoints[wp_index+1][1])**2)
+            arc_line = LineString([(waypoints[wp_index][0], waypoints[wp_index][1]), (waypoints[wp_index+1][0], waypoints[wp_index+1][1])])
+            self.draw(arc_line.coords.xy, dict(color='#ad76c5', marker='.', markersize=7))
+            arc_length += arc_line.length
             if arc_length > self._lookahead: break
             wp_index += 1
 
@@ -323,22 +335,41 @@ class BehaviouralPlanner:
                 ego_yaw             : top-down orientation [-pi to pi]
                 ego_open_loop_speed : open loop speed (m/s)
         """
+        intersection_flag = False
+        traffic_light_state = None
+        dist_from_tl = float('inf')
+
+        # Add ego_state as waypoint if is before the closest point
+        ego_point = Point(ego_state[0], ego_state[1])
+        closest_point = Point(waypoints[closest_index][0], waypoints[closest_index][1])
+        distance_ego2closest = ego_point.distance(closest_point)
+        # Project the ego point for distance_ego2closest meters in the ego direction and check if that is the same of the closest
+        to_check_point = Point(ego_point.x + distance_ego2closest * np.cos(ego_state[2]),
+                               ego_point.y + distance_ego2closest * np.sin(ego_state[2]))
+        distance_closest2check = closest_point.distance(to_check_point)
+        added_waypoint =  distance_closest2check < distance_ego2closest
+        if added_waypoint:
+            waypoints = np.insert(waypoints, closest_index*waypoints.shape[1], np.array([ego_state[0], ego_state[1], 0])).reshape(waypoints.shape[0]+1, waypoints.shape[1])
+            goal_index += 1
+
         for i in range(closest_index, goal_index):
             # Check to see if path segment crosses any of the stop lines.
 
             for key, traffic_light_fence in enumerate(self._traffic_lights['fences']):
                 # Ideal path segment
                 path_wp1_wp2 = LineString([waypoints[i][0:2], waypoints[i+1][0:2]])
+                self.draw(path_wp1_wp2.coords.xy, dict(color='#c576b5', marker='.', linestyle='--', markersize=10))
                 # Traffic Light segment
                 tl_line = LineString([traffic_light_fence[0:2], traffic_light_fence[2:4]])
                 # intersection between the Ideal path and the Traffic Light line.
-                intersection_coords = path_wp1_wp2.intersection(tl_line).coords
+                intersection_flag = path_wp1_wp2.intersects(tl_line)
 
                 # If there is an intersection with a stop line, update the goal state to stop before the goal line.
-                if len(intersection_coords) > 0:
-                    intersection_point = Point(intersection_coords)
+                if intersection_flag:
+                    intersection_point = Point(path_wp1_wp2.intersection(tl_line).coords)
 
                     goal_index = i
+                    traffic_light_state = self._traffic_lights['states'][key]
 
                     ego_point = Point(ego_state[0], ego_state[1])
                     dist_from_tl = ego_point.distance(intersection_point)
@@ -349,10 +380,16 @@ class BehaviouralPlanner:
                     # Check if passed the line. In that case, invert the sign.
                     if to_check_point.distance(intersection_point) > dist_from_tl:
                         dist_from_tl *= -1
-                    
-                    return goal_index, True, self._traffic_lights['states'][key], dist_from_tl
 
-        return goal_index, False, None, float('inf')
+                    self.draw(tl_line.coords.xy, dict(color='#c58676', linewidth=2.5, label='traffic light'))
+                    break
+            
+            if intersection_flag:
+                break
+
+        if added_waypoint:
+            goal_index -= 1
+        return goal_index, intersection_flag, traffic_light_state, dist_from_tl
 
     def check_lead_vehicle(self, waypoints, closest_index, goal_index, ego_state):
         """Checks for a lead vehicle that is intervening the goal path.
@@ -392,54 +429,18 @@ class BehaviouralPlanner:
         vehicle_speed = 0
         dist_from_intersection = float('inf')
 
+        # Check if ego is the first waypoint because close vehicle can be not checked.
         ego_point = Point(ego_state[0], ego_state[1])
-        self._to_draw.append((ego_point.coords.xy, 'green'))
-
-        # Check also from ego to the first waypoint because close vehicle can be not checked.
         closest_point = Point(waypoints[closest_index][0], waypoints[closest_index][1])
         dist_from_closest = ego_point.distance(closest_point)
-
         to_check_point = Point(ego_point.x + dist_from_closest * np.cos(ego_state[2]),
                                ego_point.y + dist_from_closest * np.sin(ego_state[2]))
-        
         dist_from_to_check_point = to_check_point.distance(closest_point)
+        added_waypoint = dist_from_to_check_point < dist_from_closest
+        if added_waypoint:
+            waypoints = np.insert(waypoints, closest_index*waypoints.shape[1], np.array([ego_state[0], ego_state[1], 0])).reshape(waypoints.shape[0]+1, waypoints.shape[1])
+            goal_index += 1
 
-        if dist_from_to_check_point < dist_from_closest:
-            _dy = waypoints[closest_index][1] - ego_state[1]
-            _dx = waypoints[closest_index][0] - ego_state[0]
-            path_angle = np.arctan(_dy/_dx)
-
-            # path_wp1_wp2 but wider
-            path_bb = Polygon([(ego_point.x + BB_PATH * np.cos(path_angle - np.pi / 2),
-                                ego_point.y + BB_PATH * np.sin(path_angle - np.pi / 2)),
-                                (ego_point.x + BB_PATH * np.cos(path_angle + np.pi / 2),
-                                ego_point.y + BB_PATH * np.sin(path_angle + np.pi / 2)),
-                                (waypoints[closest_index][0] + BB_PATH * np.cos(path_angle + np.pi / 2),
-                                waypoints[closest_index][1] + BB_PATH * np.sin(path_angle + np.pi / 2)),
-                                (waypoints[closest_index][0] + BB_PATH * np.cos(path_angle - np.pi / 2),
-                                waypoints[closest_index][1] + BB_PATH * np.sin(path_angle - np.pi / 2))])
-            
-            self._to_draw.append((path_bb.exterior.xy, 'blue'))
-
-            for key, vehicle_bb in enumerate(self._vehicle['fences']):
-                vehicle = Polygon(vehicle_bb)
-
-                intersection_flag = vehicle.intersects(path_bb)
-
-                if intersection_flag:
-                    goal_index = closest_index 
-
-                    other_vehicle_point = Point(self._vehicle['position'][key][0], self._vehicle['position'][key][1])
-                    dist_from_intersection = ego_point.distance(other_vehicle_point)
-
-                    if dist_from_intersection > self._follow_lead_vehicle_lookahead:
-                        intersection_flag = False
-                    else:
-                        vehicle_position = self._vehicle['position'][key]
-                        vehicle_speed = self._vehicle['speeds'][key]
-                        self._to_draw.append((vehicle.exterior.xy, 'red'))
-                    break
-        
         # Check until the Lookahead 
         if not intersection_flag:
             for i in range(closest_index, len(waypoints)):
@@ -454,15 +455,15 @@ class BehaviouralPlanner:
                 # path_wp1_wp2 but wider
                 path_bb = Polygon([(waypoints[i][0] + BB_PATH * np.cos(path_angle - np.pi / 2),
                                     waypoints[i][1] + BB_PATH * np.sin(path_angle - np.pi / 2)),
-                                (waypoints[i][0] + BB_PATH * np.cos(path_angle + np.pi / 2),
+                                   (waypoints[i][0] + BB_PATH * np.cos(path_angle + np.pi / 2),
                                     waypoints[i][1] + BB_PATH * np.sin(path_angle + np.pi / 2)),
-                                (waypoints[i+1][0] + BB_PATH * np.cos(path_angle + np.pi / 2),
+                                   (waypoints[i+1][0] + BB_PATH * np.cos(path_angle + np.pi / 2),
                                     waypoints[i+1][1] + BB_PATH * np.sin(path_angle + np.pi / 2)),
-                                (waypoints[i+1][0] + BB_PATH * np.cos(path_angle - np.pi / 2),
+                                   (waypoints[i+1][0] + BB_PATH * np.cos(path_angle - np.pi / 2),
                                     waypoints[i+1][1] + BB_PATH * np.sin(path_angle - np.pi / 2))])
                 
-                self._to_draw.append((path_wp1_wp2.coords.xy, 'yellow'))
-                self._to_draw.append((path_bb.exterior.xy, 'blue'))
+                self.draw(path_wp1_wp2.coords.xy, dict(color='#76b5c5', linestyle=':'))
+                self.draw(path_bb.exterior.xy, dict(color='#76b5c5', linestyle=':'))
 
                 for key, vehicle_bb in enumerate(self._vehicle['fences']):
                     vehicle = Polygon(vehicle_bb)
@@ -480,11 +481,14 @@ class BehaviouralPlanner:
                         else:
                             vehicle_position = self._vehicle['position'][key]
                             vehicle_speed = self._vehicle['speeds'][key]
-                            self._to_draw.append((vehicle.exterior.xy, 'red'))
+                            self.draw(vehicle.exterior.xy, dict(color='red', linestyle='-', label='vehicle intersection'))
                         break
                 
                 if intersection_flag or (distance_seen >= self._follow_lead_vehicle_lookahead):
                     break
+
+        if added_waypoint:
+            goal_index -= 1
 
         return goal_index, intersection_flag, vehicle_position, vehicle_speed, dist_from_intersection
                 
