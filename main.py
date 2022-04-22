@@ -26,10 +26,7 @@ from munch import DefaultMunch
 import tkinter as tk
 import threading
 from tqdm import tqdm
-from shapely.geometry import Point, LineString, Polygon
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-# Implement the default Matplotlib key bindings.
-from matplotlib.backend_bases import key_press_handler
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
 # Script level imports
@@ -217,7 +214,7 @@ class StateInfo(threading.Thread):
         # The try structure is needed to avoid the RuntimeError who inform that the root window will be executed in a non-main thread.
         try:
             self._root.mainloop()
-        except KeyboardInterrupt: # RuntimeError:
+        except RuntimeError:
             pass
 
     def set_param_info(self, info):
@@ -235,7 +232,8 @@ class StateInfo(threading.Thread):
     def draw_things(self, *args):
         """Draw in the live plt image."""
         for arg in args:
-            self._ax.plot(*arg[0], color=arg[1], marker='.', markersize=20)
+            self._ax.plot(*arg[0], **arg[1])
+            self._ax.legend()
         self._canvas.draw()
         self._ax.clear()
 
