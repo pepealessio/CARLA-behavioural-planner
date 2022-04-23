@@ -56,6 +56,7 @@ class BehaviouralPlanner:
         self._ax = self._fig.add_subplot(111) 
         self._fig.canvas.draw()
         self._renderer = self._fig.canvas.renderer
+        self._legend = None
 
     def _draw(self, geometry, angle=0, short='-', settings={}):
         """Draw a geometry object in the figure spawned by the behavioural planner.
@@ -89,9 +90,12 @@ class BehaviouralPlanner:
             this method is used.
         """
         self._fig.draw(self._renderer)
-        #self._fig.legend()
+        self._legend = self._fig.legend()
         plt.pause(.001)
         self._ax.cla()
+        if self._legend is not None: 
+            self._legend.remove()
+            self._legend = None
         self._ax.set_aspect('equal', 'datalim')
         self._ax.invert_xaxis()
     
@@ -217,7 +221,7 @@ class BehaviouralPlanner:
         for i, p in enumerate(pedestrians):
             self._draw(p, angle=ego_direction, short='r:', settings=dict(label=f'Pedestrian {i}'))
         # Draw the pedestrian check area
-        self._draw(ped_chech_area, angle=ego_direction, short='--', settings=dict(label='Check vehicle area'))
+        self._draw(ped_chech_area, angle=ego_direction, short='--', settings=dict(label='Check pedestrian area'))
 
         # Update input info about vehicles
         for i, p in enumerate([p for p in pedestrians]):
