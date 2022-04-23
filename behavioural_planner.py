@@ -7,17 +7,20 @@ import matplotlib.pyplot as plt
 
 
 # State machine states
-FOLLOW_LANE = 0
-DECELERATE_TO_STOP = 1
-STAY_STOPPED = 2
+FOLLOW_LANE = 'Follow Lane'
+DECELERATE_TO_STOP = 'Decelerate to Stop'
+STAY_STOPPED = 'Stay Stopped'
+
 # Stop speed threshold
 STOP_THRESHOLD = 0.1
 
+# Enumerate Trafficlight State
 TRAFFICLIGHT_GREEN = 0
 TRAFFICLIGHT_YELLOW = 1
 TRAFFICLIGHT_RED = 2
 TRAFFICLIGHT_YELLOW_MIN_TIME = 3.5  # sec 
 
+# Define x dimension of the bounding box to check for obstacles.
 BB_PATH = 1.5  # m
 BB_PEDESTRIAN_LEFT = 4 # m
 BB_PEDESTRIAN_RIGHT = 1.5 # m
@@ -38,20 +41,37 @@ class BehaviouralPlanner:
         self._traffic_lights                = traffic_lights
         self._vehicle                       = vehicle
         self._pedestrians                   = pedestrians
-
-        self._state_info = ''
-
+        self._state_info                    = ''
+        self._current_input                 = ''
         self._init_plot()
 
     def _init_plot(self):
-        """Initialize the environment to plot information in a live figure."""
+        """Initialize the environment to plot information in a live figure.
+
+        Note:
+            This method must be colled just once, before any call at _draw method. Otherwise Exception
+            will be rised in ythe runtime.
+        """
         self._fig = plt.figure('Geometry Help')
         self._ax = self._fig.add_subplot(111) 
         self._fig.canvas.draw()
         self._renderer = self._fig.canvas.renderer
 
     def _draw(self, geometry, angle=0, short='-', settings={}):
-        """Draw a geometry object."""
+        """Draw a geometry object in the figure spawned by the behavioural planner.
+
+        Note:
+            The geometry will be added in the plot after calling the method '_finalize_draw'. Also,
+            wher that was called, all the other geometry need to be re-added whit this function for the
+            next plot, if needed.
+        
+        Args:
+            geometry (Point or LineString or Polygon): The geometry to print in the figure.
+            angle (float, default=0): the angle, in radians, which represents the direction of 
+            the vehicle, to obtain a representation of the geometries always in the viewing direction.
+            short (str, default='-'): the first matplotlib argument to define a style.
+            settings (dict, default={}): The matplotlib settings to associate at that geometry. 
+        """
         geometry = rotate(geometry, (-angle + np.pi/2), (0,0), use_radians=True)
         if type(geometry) == Point:
             self._ax.plot(*geometry.coords.xy, short, **settings)
@@ -61,7 +81,13 @@ class BehaviouralPlanner:
             self._ax.plot(*geometry.exterior.xy, short, **settings)
 
     def _finalize_draw(self):
-        """This method must be called each cicle. All will be updated."""
+        """This method shows everything passed to the _draw method in the figure.
+        
+        Note:
+            When this method is called, the previous geometries in the image will continue to be displayed 
+            but, if not re-inserted with the _draw method, they will no longer be displayed the next time 
+            this method is used.
+        """
         self._fig.draw(self._renderer)
         #self._fig.legend()
         plt.pause(.001)
@@ -73,19 +99,24 @@ class BehaviouralPlanner:
         self._lookahead = lookahead
 
     def set_traffic_light(self, traffic_lights):
+        """Update the traffic light information. These are coming from Carla."""
         for k in traffic_lights:
             self._traffic_lights[k] = traffic_lights[k]
     
     def set_vehicle(self, vehicle):
+        """Update the other vehicle information. These are coming from Carla."""
         for k in vehicle:
             self._vehicle[k] = vehicle[k]
 
     def set_pedestrians(self, pedestrians):
+        """Update the pedestrian information. These are coming from Carla."""
         for k in pedestrians:
             self._pedestrians[k] = pedestrians[k]
 
-    def get_state_info(self):
-        return self._state_info
+    def get_bp_info(self):
+        """Return some string with information on the state of the FSM and useful
+        current input."""
+        return self._state_info, self._current_input
 
     # Handles state transitions and computes the goal state.
     def transition_state(self, waypoints, ego_state, closed_loop_speed):
@@ -129,52 +160,76 @@ class BehaviouralPlanner:
             STOP_COUNTS     : Number of cycles (simulation iterations) 
                               before moving from stop sign.
         """
-        # Transform ego info in shapey geometry
+        # Update state info
+        self._state_info = f'Current State: {self._state}'
+        # Update input info
+        self._current_input = 'Current inputs:'
+
+        # ---------------- GOAL INDEX ---------------------------
+        # Transform ego info in shapely geometry
         ego_point = Point(ego_state[0], ego_state[1])
         ego_direction = ego_state[2]
+        # Draw the ego state point.
         self._draw(ego_point, angle=ego_direction, short='g.', settings=dict(markersize=20, label='EgoPoint'))
         
         # Get closest waypoint
         closest_len, closest_index = get_closest_index(waypoints, ego_state)
+
         # Get goal based on the current lookahead
         goal_index, is_close_itc, goal_path = self.get_goal_index(waypoints, ego_point, ego_direction, closest_len, closest_index)
         self._draw(goal_path, angle=ego_direction, short='y^-', settings=dict(markersize=10, label='Goal Path'))
 
-        while waypoints[goal_index][2] <= 0.1: goal_index += 1  # Skip no moving goal to not remain stuck
+        # Skip no moving goal to not remain stuck
+        while waypoints[goal_index][2] <= 0.1: goal_index += 1  
 
+        # -------------- TRAFFIC LIGHTS --------------------------
         # Check for traffic lights presence
         traffic_lights_index, traffic_light_present, traffic_light_state, distance_from_traffic_lights, tl_line = \
             self.check_for_traffic_lights(waypoints, is_close_itc, closest_index, goal_index, ego_state)
+        
+        # Draw trafficlight stop line if present
         if traffic_light_present: self._draw(tl_line, angle=ego_direction, short='-', settings=dict(markersize=10, label='Trafficlight'))
 
-        vehicle_presence, vehicle_position, vehicle_speed, dist_from_vehicle, vehicles, veh_chech_area = \
-            self.check_lead_vehicle(ego_point, goal_path)
-        for i, v in enumerate(vehicles):
+        # Update input info about trafficlights
+        self._current_input += f'\n - Traffic lights: ' + \
+            f'{"no" if not traffic_light_present else ""}' + \
+            (f'{"GREEN" if traffic_light_state == 0 else "YELLOW" if traffic_light_state == 1 else "RED"}, distance={round(distance_from_traffic_lights, 2)} m' if traffic_light_present else '') 
+
+        # --------------- VEHICLES --------------------------------
+        # Check for vehicle presence
+        vehicle_presence, vehicles, veh_chech_area = self.check_for_vehicle(ego_point, goal_path)
+
+        # Draw all the found vehicle
+        for i, v in enumerate([v[3] for v in vehicles]):
             self._draw(v, angle=ego_direction, short='r--', settings=dict(label=f'Vehicle {i}'))
+        # Draw the vehicle check area
         self._draw(veh_chech_area, angle=ego_direction, short='b--', settings=dict(label='Check vehicle area'))
 
-        pedestrian_presence, pedestrian_position, pedestrian_speed, dist_from_pedestrian, pedestrians, ped_chech_area = \
-            self.check_pedestrians(ego_point, goal_path)
+        # Update input info about vehicles
+        for i, v in enumerate([v for v in vehicles]):
+            self._current_input += f'\n - Vehicle {i}: ' + \
+                f'Position={tuple((round(x, 1) for x in v[0][:2]))}, Speed={round(v[1], 2)} m/s, Distance={round(v[2], 2)} m'
+
+        # --------------- PEDESTRIANS ------------------------------
+        # Check for pedestrian presence
+        pedestrian_presence, pedestrians, ped_chech_area = self.check_for_pedestrians(ego_point, goal_path)
+        # Draw all the found pedestrian
         for i, p in enumerate(pedestrians):
             self._draw(p, angle=ego_direction, short='r:', settings=dict(label=f'Pedestrian {i}'))
+        # Draw the pedestrian check area
         self._draw(ped_chech_area, angle=ego_direction, short='--', settings=dict(label='Check vehicle area'))
 
-        # Set debug state info
-        self._state_info = f'Current State: {"FOLLOW_LANE" if self._state == 0 else "DECELERATE" if self._state == 1 else "STOPPED"}' + \
-            f'\n\nCurrent Input:' + \
-            f'\n  - ego-state: {[round(x, 2) for x in ego_state]}' + \
-            f'\n  - Traffic lights: {"no" if not traffic_light_present else ""}' + \
-            (f'{"green" if traffic_light_state == 0 else "yellow" if traffic_light_state == 1 else "red"}' + \
-            f', distance: {round(distance_from_traffic_lights, 2)} m' if traffic_light_present else '') + \
-            (f'\n  - Lead vehicle: {"no" if not vehicle_presence else ""}') + \
-            (f'{[round(x, 2) for x in vehicle_position]}, speed: {round(vehicle_speed, 2)} m/s, distance: {round(dist_from_vehicle, 2)} m' if vehicle_presence else '') + \
-            (f'\n  - Pedestrian: {"no" if not pedestrian_presence else ""}') + \
-            (f'{[round(x, 2) for x in pedestrian_position]}, speed: {round(pedestrian_speed, 2)} m/s, distance: {round(dist_from_pedestrian, 2)} m' if pedestrian_presence else '')
+        # Update input info about vehicles
+        for i, p in enumerate([p for p in pedestrians]):
+            self._current_input += f'\n - Pedestrian {i}: ' + \
+                f'Position={tuple((round(x, 1) for x in p[0][:2]))}, Speed={round(p[1], 2)} m/s, Distance={round(p[2], 2)} m'
 
+        # --------------- Update current input draw ----------------
+        self._finalize_draw()
+
+        # ------------- FSM EVOLUTION -------------------------------
         self._goal_index = goal_index
         self._goal_state = waypoints[goal_index]
-
-        self._finalize_draw()
 
         # if vehicle_presence:
         #     self._follow_lead_vehicle = True
@@ -286,6 +341,7 @@ class BehaviouralPlanner:
     # Gets the goal index in the list of waypoints, based on the lookahead and
     # the current ego state. In particular, find the earliest waypoint that has accumulated
     # arc length (including closest_len) that is greater than or equal to self._lookahead.
+    # TODO: UPDATE DOCSTRING
     def get_goal_index(self, waypoints, ego_point, ego_direction, closest_len, closest_index):
         """Gets the goal index for the vehicle. 
         
@@ -307,12 +363,16 @@ class BehaviouralPlanner:
 
                     waypoints[5]:
                     returns [x5, y5, v5] (6th waypoint)
+            ego_point (Point): MISSING
+            ego_direction (float): MISSING
             closest_len: length (m) to the closest waypoint from the vehicle.
             closest_index: index of the waypoint which is closest to the vehicle.
                 i.e. waypoints[closest_index] gives the waypoint closest to the vehicle.
         returns:
             wp_index: Goal index for the vehicle to reach
                 i.e. waypoints[wp_index] gives the goal waypoint
+            is_ego_in_the_middle (bool): MISSING
+            goal_line (LineString): MISSING
         """
         # check if ego state is in the middle of wp_i and wp_i+1 with 10^-2 meters precision
         closest_point = Point(waypoints[closest_index][0], waypoints[closest_index][1])
@@ -356,6 +416,7 @@ class BehaviouralPlanner:
 
         return goal_index % len(waypoints), is_ego_itm, arc
 
+    # TODO: UPDATE DOCSTRING
     def check_for_traffic_lights(self, waypoints, is_ego_itm, closest_index, goal_index, ego_state):
         """Checks for a traffic light that is intervening the goal path.
 
@@ -378,6 +439,7 @@ class BehaviouralPlanner:
 
                     waypoints[5]:
                     returns [x5, y5, v5] (6th waypoint)
+            is_ego_itm (bool): MISSING
             closest_index: index of the waypoint which is closest to the vehicle.
                 i.e. waypoints[closest_index] gives the waypoint closest to the vehicle.
             goal_index (current): Current goal index for the vehicle to reach
@@ -388,11 +450,13 @@ class BehaviouralPlanner:
                 ego_yaw             : top-down orientation [-pi to pi]
                 ego_open_loop_speed : open loop speed (m/s)
         """
+        # Default return parameter
         intersection_flag = False
         traffic_light_state = None
         dist_from_tl = float('inf')
         tl_line = None
 
+        # If ego is after the closest index, consider that
         if is_ego_itm:
             waypoints = np.insert(waypoints, closest_index*waypoints.shape[1], np.array([ego_state[0], ego_state[1], 0])).reshape(waypoints.shape[0]+1, waypoints.shape[1])
             goal_index += 1
@@ -422,21 +486,25 @@ class BehaviouralPlanner:
             if intersection_flag:
                 break
 
+        # Fix the added waypoint for the calculation
         if is_ego_itm:
             goal_index -= 1
 
         return goal_index, intersection_flag, traffic_light_state, dist_from_tl, tl_line
 
-    def check_lead_vehicle(self, ego_point, goal_path):
+    # TODO: Update docstring
+    def check_for_vehicle(self, ego_point, goal_path):
         """UPDATE
         """
+        # Default return parameter
         intersection_flag = False
         vehicle_position = None
         vehicle_speed = 0
-        dist_from_intersection = float('inf')
 
+        # Starting from the goal line, create an area to check for vehicle
         path_bb = goal_path.buffer(BB_PATH, cap_style=CAP_STYLE.flat)
 
+        # Check all vehicles whose bounding box intersects the control area
         intersection = []
         for key, vehicle_bb in enumerate(self._vehicle['fences']):
             vehicle = Polygon(vehicle_bb)
@@ -450,27 +518,29 @@ class BehaviouralPlanner:
 
                 intersection.append([vehicle_position, vehicle_speed, dist_from_vehicle, vehicle])
 
+        # The lead vehicle can be said to be present if there is at least one vehicle in the area.
         intersection_flag = len(intersection) > 0
 
-        vehicles = []
-        for vehicle in intersection:
-            if vehicle[2] < dist_from_intersection:
-                vehicle_position = vehicle[0]
-                vehicle_speed = vehicle[1]
-                dist_from_intersection = vehicle[2]
-                vehicles.append(vehicle[3])
+        # Sort the vehicle by their distance from ego
+        intersection = sorted(intersection, key=lambda x: x[2])
 
-        return intersection_flag, vehicle_position, vehicle_speed, dist_from_intersection, vehicles, path_bb
-                
-    def check_pedestrians(self, ego_point, goal_path):
-        """AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"""
+        return intersection_flag, intersection, path_bb
+
+    # TODO: Update Docstring
+    def check_for_pedestrians(self, ego_point, goal_path):
+        """UPDATE
+        """
+        # Default return parameter
         intersection_flag = False
         pedestrian_position = None
         pedestrian_speed = 0
-        dist_from_intersection = float('inf')
 
+        # Starting from the goal line, create an area to check for vehicle. The area, in this case,
+        # was created as teh union of a little area on the right and a laregr area (to check pedestrian crossing).
+        # NOTE: The sign are inverted respect to the shapely documentation because shapely use a reverse x choords.
         path_bb = unary_union([goal_path.buffer(BB_PEDESTRIAN_RIGHT, single_sided=True), goal_path.buffer(-BB_PEDESTRIAN_LEFT, single_sided=True)])
 
+        # Check all pedestrians whose bounding box intersects the control area
         intersection = []
         for key, pedestrian_bb in enumerate(self._pedestrians['fences']):
             pedestrian = Polygon(pedestrian_bb)
@@ -484,17 +554,13 @@ class BehaviouralPlanner:
 
                 intersection.append([pedestrian_position, pedestrian_speed, dist_from_pedestrian, pedestrian])
 
+        # A pedestrian can be said to be present if there is at least one vehicle in the area.
         intersection_flag = len(intersection) > 0
 
-        pedestrians = []
-        for pedestrian in intersection:
-            if pedestrian[2] < dist_from_intersection:
-                pedestrian_position = pedestrian[0]
-                pedestrian_speed = pedestrian[1]
-                dist_from_intersection = pedestrian[2]
-            pedestrians.append(pedestrian[3])
+        # Sort the vehicle by their distance from ego
+        intersection = sorted(intersection, key=lambda x: x[2])
 
-        return intersection_flag, pedestrian_position, pedestrian_speed, dist_from_intersection, pedestrians, path_bb
+        return intersection_flag, intersection, path_bb
 
 # Compute the waypoint index that is closest to the ego vehicle, and return
 # it as well as the distance from the ego vehicle to that waypoint.
