@@ -173,7 +173,7 @@ class StateInfo(threading.Thread):
             self._root.configure(background='white')
 
             self._root.grid_columnconfigure(0, weight=1)
-            self._root.grid_rowconfigure(3, weight=1)
+            self._root.grid_rowconfigure(5, weight=1)
 
             tk.Label(self._root, text='Simulation params:', font=("Microsoft YaHei UI", 16), bg='white', anchor="w").grid(row=0, column=0, sticky='nswe')
 
@@ -183,13 +183,21 @@ class StateInfo(threading.Thread):
             self._param_text['bg'] = 'white'
             self._param_text.grid(row=1, column=0, sticky='nswe')
 
-            tk.Label(self._root, text='Behavioural Planner info:', font=("Microsoft YaHei UI", 16), bg='white', anchor="w").grid(row=2, column=0, sticky='nswe')
+            tk.Label(self._root, text='Behavioural Planner State:', font=("Microsoft YaHei UI", 16), bg='white', anchor="w").grid(row=2, column=0, sticky='nswe')
 
-            self._text = tk.Text(self._root, width=15, height=8, font=("Microsoft YaHei UI Light", 11))
-            self._text.bind("<Key>", lambda e: "break")
-            self.set_state_info('loading ...')
-            self._text['bg'] = 'white'
-            self._text.grid(row=3, column=0, sticky='nswe')
+            self._state_text = tk.Text(self._root, width=15, height=0, font=("Microsoft YaHei UI Light", 11))
+            self._state_text.bind("<Key>", lambda e: "break")
+            self._state_text['bg'] = 'white'
+            self._state_text.grid(row=3, column=0, sticky='nswe')
+
+            tk.Label(self._root, text='Behavioural Planner Input:', font=("Microsoft YaHei UI", 16), bg='white', anchor="w").grid(row=4, column=0, sticky='nswe')
+
+            self._input_text = tk.Text(self._root, width=15, height=6, font=("Microsoft YaHei UI Light", 11))
+            self._input_text.bind("<Key>", lambda e: "break")
+            self._input_text['bg'] = 'white'
+            self._input_text.grid(row=5, column=0, sticky='nswe')
+
+            self.set_state_info(('loading ...', 'loading ...'))
             
             self.start()
 
@@ -211,9 +219,13 @@ class StateInfo(threading.Thread):
 
     def set_state_info(self, info):
         """Update the state info box."""
+        state_info, input_info = info
         if self._show_on:
-            self._text.delete('1.0', tk.END)
-            self._text.insert(tk.END, info)
+            self._state_text.delete('1.0', tk.END)
+            self._state_text.insert(tk.END, state_info)
+
+            self._input_text.delete('1.0', tk.END)
+            self._input_text.insert(tk.END, input_info)
 
     def quit(self):
         """Destroy the window"""
@@ -954,7 +966,7 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                 # ------------------- State info --------------------------
                 ###########################################################
                 if VISUALIZE_STATE_INFO:
-                    state_info.set_state_info(bp.get_state_info())
+                    state_info.set_state_info(bp.get_bp_info())
 
                 ###########################################################
                 # --------------- Read traffic lights info ----------------
