@@ -169,13 +169,14 @@ class BehaviouralPlanner:
         # Update input info
         self._current_input = 'Current inputs:'
 
-        # ---------------- GOAL INDEX ---------------------------
+        # ---------------- EGO STATE ---------------------------
         # Transform ego info in shapely geometry
         ego_point = Point(ego_state[0], ego_state[1])
         ego_direction = ego_state[2]
         # Draw the ego state point.
         self._draw(ego_point, angle=ego_direction, short='g.', settings=dict(markersize=35, label='Ego Point'))
         
+        # ---------------- GOAL INDEX ---------------------------
         # Get closest waypoint
         closest_len, closest_index = get_closest_index(waypoints, ego_state)
 
@@ -201,7 +202,7 @@ class BehaviouralPlanner:
 
         # --------------- VEHICLES --------------------------------
         # Check for vehicle presence
-        vehicle_presence, vehicles, veh_chech_area = self.check_for_vehicle(ego_point, goal_path)
+        vehicle_presence, vehicles, veh_chech_area = self.check_for_vehicle(waypoints, ego_point, goal_path)
 
         # Draw all the found vehicle
         for i, v in enumerate([v[3] for v in vehicles]):
@@ -216,17 +217,19 @@ class BehaviouralPlanner:
 
         # --------------- PEDESTRIANS ------------------------------
         # Check for pedestrian presence
-        pedestrian_presence, pedestrians, ped_chech_area = self.check_for_pedestrians(ego_point, goal_path)
+        pedestrian_presence, pedestrians, ped_chech_area = self.check_for_pedestrians(waypoints, ego_point, goal_path)
         # Draw all the found pedestrian
         for i, p in enumerate(pedestrians):
-            self._draw(p, angle=ego_direction, short='--', settings=dict(color='#fc2626', label=f'Pedestrian {i}'))
+            self._draw(p[4], angle=ego_direction, short='--', settings=dict(color='#fc2626', label=f'Pedestrian {i}'))
+            p_closest_wp = Point(waypoints[p[0]][0], waypoints[p[0]][1])        # Print to understand where to stop
+            self._draw(p_closest_wp, angle=ego_direction, short='.', settings=dict(markersize=5, color='#fc2626', label=f'Pedestrian {i} closest'))
         # Draw the pedestrian check area
         self._draw(ped_chech_area, angle=ego_direction, short='c:', settings=dict(label='Check pedestrian area'))
 
         # Update input info about vehicles
         for i, p in enumerate([p for p in pedestrians]):
             self._current_input += f'\n - Pedestrian {i}: ' + \
-                f'Position={tuple((round(x, 1) for x in p[0][:2]))}, Speed={round(p[1], 2)} m/s, Distance={round(p[2], 2)} m'
+                f'Position={tuple((round(x, 1) for x in p[1][:2]))}, Speed={round(p[2], 2)} m/s, Distance={round(p[3], 2)} m'
 
         # --------------- Update current input draw ----------------
         self._finalize_draw()
@@ -497,7 +500,7 @@ class BehaviouralPlanner:
         return goal_index, intersection_flag, traffic_light_state, dist_from_tl, tl_line
 
     # TODO: Update docstring
-    def check_for_vehicle(self, ego_point, goal_path):
+    def check_for_vehicle(self, waypoints, ego_point, goal_path):
         """UPDATE
         """
         # Default return parameter
@@ -531,7 +534,7 @@ class BehaviouralPlanner:
         return intersection_flag, intersection, path_bb
 
     # TODO: Update Docstring
-    def check_for_pedestrians(self, ego_point, goal_path):
+    def check_for_pedestrians(self, waypoints, ego_point, goal_path):
         """UPDATE
         """
         # Default return parameter
@@ -551,20 +554,60 @@ class BehaviouralPlanner:
 
             if pedestrian.intersects(path_bb):
                 other_pedestrian_point = Point(self._pedestrians['position'][key][0], self._pedestrians['position'][key][1])
+                closest_index = get_before_closest_index(waypoints, other_pedestrian_point)
                 dist_from_pedestrian = ego_point.distance(other_pedestrian_point)
 
                 pedestrian_position = self._pedestrians['position'][key]
                 pedestrian_speed = self._pedestrians['speeds'][key]
 
-                intersection.append([pedestrian_position, pedestrian_speed, dist_from_pedestrian, pedestrian])
+                intersection.append([closest_index, pedestrian_position, pedestrian_speed, dist_from_pedestrian, pedestrian])
 
         # A pedestrian can be said to be present if there is at least one vehicle in the area.
         intersection_flag = len(intersection) > 0
 
         # Sort the vehicle by their distance from ego
-        intersection = sorted(intersection, key=lambda x: x[2])
+        intersection = sorted(intersection, key=lambda x: x[3])
 
         return intersection_flag, intersection, path_bb
+
+
+#TODO: Update docstring
+def get_before_closest_index(waypoints, point):
+    """"""
+    closest_len = float('Inf')
+    closest_index = 0
+
+    for i in range(len(waypoints)):
+        wp_i = Point(waypoints[i][0], waypoints[i][1])
+        temp = point.distance(wp_i)
+        if temp < closest_len:
+            closest_len = temp
+            closest_index = i
+    
+    # Check if passed
+    closest_point = Point(waypoints[closest_index][0], waypoints[closest_index][1])
+    dist_poi2close = point.distance(closest_point)
+
+    # If the wp is the first, nothing can be changed
+    if closest_index == 0:
+        return closest_index
+
+    # Get path direction
+    contiguous_point = Point(waypoints[closest_index-1][0], waypoints[closest_index-1][1])
+    wp_path_direction = np.arctan2((point.y - contiguous_point.y), (point.x - contiguous_point.x))
+
+    # Project the closest point in the direction
+    poi_plus_cdist = Point(point.x + closest_len * np.cos(wp_path_direction), point.y + closest_len * np.sin(wp_path_direction))
+
+    # If the distance bw closest and projected are greater to the distance bw closest and point, the closest point are passed
+    dist_close2poip = closest_point.distance(poi_plus_cdist)
+    is_ego_itm = dist_close2poip > dist_poi2close
+
+    if is_ego_itm:
+        closest_index -= 1
+    
+    return closest_index
+
 
 # Compute the waypoint index that is closest to the ego vehicle, and return
 # it as well as the distance from the ego vehicle to that waypoint.
