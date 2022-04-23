@@ -52,7 +52,7 @@ class BehaviouralPlanner:
 
     def _draw(self, geometry, angle=0, short='-', settings={}):
         """Draw a geometry object."""
-        # geometry = rotate(geometry, (angle), (0,0), use_radians=True)
+        geometry = rotate(geometry, (-angle + np.pi/2), (0,0), use_radians=True)
         if type(geometry) == Point:
             self._ax.plot(*geometry.coords.xy, short, **settings)
         elif type(geometry) == LineString:
