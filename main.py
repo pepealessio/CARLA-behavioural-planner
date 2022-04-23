@@ -63,6 +63,7 @@ SEED_VEHICLES          = 0      # seed for vehicle spawn randomizer
 ###############################################################################
 # ---------------------- PERSONAL ---------------------------------------------
 ###############################################################################
+RETRY_SCENE_TIMES = 3
 USE_CAMERA = False      # See the car camera (useful in non-local server)
 VISUALIZE_STATE_INFO = True  # See a window with the state info
 TRAFFIC_LIGHT_STOP_LINE_LEN = 4     # The lenght of the stop line for traffic lights
@@ -1373,33 +1374,37 @@ def main():
             for num_vehicles in nums_vehicles:
                 for seed_pedestrians in seeds_pedestrians:
                     for seed_vehicles in seeds_vehicles:
+                        retry_times = RETRY_SCENE_TIMES
+                        while retry_times > 0:
+                            logging.info(f"Executing simulation for {list(zip(('start_wp', 'stop_wp', 'num_pedestrians', 'num_vehicles', 'seed_pedestrians', 'seed_vehicles'),(start_wp, stop_wp, num_pedestrians, num_vehicles, seed_pedestrians, seed_vehicles)))}")
 
-                        logging.info(f"Executing simulation for {list(zip(('start_wp', 'stop_wp', 'num_pedestrians', 'num_vehicles', 'seed_pedestrians', 'seed_vehicles'),(start_wp, stop_wp, num_pedestrians, num_vehicles, seed_pedestrians, seed_vehicles)))}")
+                            state_info = StateInfo(VISUALIZE_STATE_INFO)
+                            state_info.set_param_info(f'path: ({start_wp}, {stop_wp}), {num_pedestrians} pedestrians (seed: {seed_pedestrians}), ' + \
+                                                    f'{num_vehicles} vehicles (seed: {seed_vehicles})')
 
-                        state_info = StateInfo(VISUALIZE_STATE_INFO)
-                        state_info.set_param_info(f'path: ({start_wp}, {stop_wp}), {num_pedestrians} pedestrians (seed: {seed_pedestrians}), ' + \
-                                                  f'{num_vehicles} vehicles (seed: {seed_vehicles})')
-
-                        try:
-                            exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians, num_vehicles, seed_pedestrians, seed_vehicles)
-                            pbar.update()  # Update progress bar
-                        except TCPConnectionError as error:
-                            logging.error(error)
-                            logging.error(f"Simulation with param {list(zip(('start_wp', 'stop_wp', 'num_pedestrians', 'num_vehicles', 'seed_pedestrians', 'seed_vehicles'),(start_wp, stop_wp, num_pedestrians, num_vehicles, seed_pedestrians, seed_vehicles)))} not executed")
-                            pbar.update()  # Update progress bar
-                        except KeyboardInterrupt:
-                            _print('\nSkipping this scene. To exit, click CTRL+C another time.')
-                            time.sleep(2)
-                            pbar.update()  # Update progress bar
-                        finally:
-                            state_info.quit()
-                            
-    
+                            try:
+                                exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians, num_vehicles, seed_pedestrians, seed_vehicles)
+                                retry_times = 0
+                                pbar.update()  # Update progress bar
+                            except TCPConnectionError as error:
+                                logging.error(error)
+                                retry_times -= 1
+                                if retry_times == 0:
+                                    logging.error(f"Simulation with param {list(zip(('start_wp', 'stop_wp', 'num_pedestrians', 'num_vehicles', 'seed_pedestrians', 'seed_vehicles'),(start_wp, stop_wp, num_pedestrians, num_vehicles, seed_pedestrians, seed_vehicles)))} not executed")
+                                    pbar.update()  # Update progress bar
+                            except KeyboardInterrupt:
+                                _print('\nSkipping this scene. To exit, click CTRL+C another time.')
+                                time.sleep(2)
+                                retry_times = 0
+                                pbar.update()  # Update progress bar
+                            finally:
+                                state_info.quit()
+                                time.sleep(1)
+                                
     pbar.close()   # Finalize Progress bar
 
 
 if __name__ == '__main__':
-
     try:
         main()
     except KeyboardInterrupt:
