@@ -174,7 +174,7 @@ class BehaviouralPlanner:
         ego_point = Point(ego_state[0], ego_state[1])
         ego_direction = ego_state[2]
         # Draw the ego state point.
-        self._draw(ego_point, angle=ego_direction, short='g.', settings=dict(markersize=20, label='EgoPoint'))
+        self._draw(ego_point, angle=ego_direction, short='g.', settings=dict(markersize=35, label='Ego Point'))
         
         # Get closest waypoint
         closest_len, closest_index = get_closest_index(waypoints, ego_state)
@@ -192,7 +192,7 @@ class BehaviouralPlanner:
             self.check_for_traffic_lights(waypoints, is_close_itc, closest_index, goal_index, ego_state)
         
         # Draw trafficlight stop line if present
-        if traffic_light_present: self._draw(tl_line, angle=ego_direction, short='-', settings=dict(markersize=10, label='Trafficlight'))
+        if traffic_light_present: self._draw(tl_line, angle=ego_direction, short='--', settings=dict(markersize=10, color='#ff7878', label='Trafficlight'))
 
         # Update input info about trafficlights
         self._current_input += f'\n - Traffic lights: ' + \
@@ -205,7 +205,7 @@ class BehaviouralPlanner:
 
         # Draw all the found vehicle
         for i, v in enumerate([v[3] for v in vehicles]):
-            self._draw(v, angle=ego_direction, short='r--', settings=dict(label=f'Vehicle {i}'))
+            self._draw(v, angle=ego_direction, short='--', settings=dict(color='#ff4d4d', linewidth=4, label=f'Vehicle {i}'))
         # Draw the vehicle check area
         self._draw(veh_chech_area, angle=ego_direction, short='b--', settings=dict(label='Check vehicle area'))
 
@@ -219,9 +219,9 @@ class BehaviouralPlanner:
         pedestrian_presence, pedestrians, ped_chech_area = self.check_for_pedestrians(ego_point, goal_path)
         # Draw all the found pedestrian
         for i, p in enumerate(pedestrians):
-            self._draw(p, angle=ego_direction, short='r:', settings=dict(label=f'Pedestrian {i}'))
+            self._draw(p, angle=ego_direction, short='--', settings=dict(color='#fc2626', label=f'Pedestrian {i}'))
         # Draw the pedestrian check area
-        self._draw(ped_chech_area, angle=ego_direction, short='--', settings=dict(label='Check pedestrian area'))
+        self._draw(ped_chech_area, angle=ego_direction, short='c:', settings=dict(label='Check pedestrian area'))
 
         # Update input info about vehicles
         for i, p in enumerate([p for p in pedestrians]):
