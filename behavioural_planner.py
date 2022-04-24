@@ -191,17 +191,17 @@ class BehaviouralPlanner:
 
         # -------------- TRAFFIC LIGHTS --------------------------
         # Check for traffic lights presence
-        traffic_lights_index, traffic_light_present, traffic_light_state, distance_from_traffic_lights, tl_line = \
-            self.check_for_traffic_lights(waypoints, is_close_itc, closest_index, goal_index, ego_state)
+        traffic_light_presence, traffic_lights = self.check_for_traffic_lights(waypoints, ego_point, goal_path)
         
-        # Draw trafficlight stop line if present
-        if traffic_light_present: self._draw(tl_line, angle=ego_direction, short='--', settings=dict(markersize=10, color='#ff7878', label='Trafficlight'))
+        # Draw all the traffic lights
+        for i, tl in enumerate([tl[3] for tl in traffic_lights]):
+            self._draw(tl, angle=ego_direction, short='-', settings=dict(markersize=10, color='#ff7878', label=f'Trafficlight {i}'))
 
         # Update input info about trafficlights
-        self._current_input += f'\n - Traffic lights: ' + \
-            f'{"no" if not traffic_light_present else ""}' + \
-            (f'{"GREEN" if traffic_light_state == 0 else "YELLOW" if traffic_light_state == 1 else "RED"}, distance={round(distance_from_traffic_lights, 2)} m' if traffic_light_present else '') 
-
+        for i, tl in enumerate([tl for tl in traffic_lights]):
+            self._current_input += f'\n - Traffic lights {i}: ' + \
+            f'{"GREEN" if tl[1] == 0 else "YELLOW" if tl[1] == 1 else "RED"}, distance={round(tl[2], 2)} m'
+        
         # --------------- VEHICLES --------------------------------
         # Check for vehicle presence
         vehicle_presence, vehicles, veh_chech_area = self.check_for_vehicle(waypoints, ego_point, goal_path)
@@ -426,80 +426,31 @@ class BehaviouralPlanner:
         return goal_index % len(waypoints), is_ego_itm, arc
 
     # TODO: UPDATE DOCSTRING
-    def check_for_traffic_lights(self, waypoints, is_ego_itm, closest_index, goal_index, ego_state):
-        """Checks for a traffic light that is intervening the goal path.
+    def check_for_traffic_lights(self, waypoints, ego_point, goal_path):
+        """"""
+        # Check for all traffic lights 
+        intersection = []
+        for key, traffic_light_fence in enumerate(self._traffic_lights['fences']):
 
-        Checks for a traffic light that is intervening the goal path. Returns a new
-        goal index (the current goal index is obstructed by a stop line), a
-        boolean flag indicating if a stop sign obstruction was found, the state of
-        the traffic light, and the distance from the closest point.
-        
-        args:
-            waypoints: current waypoints to track. (global frame)
-                length and speed in m and m/s.
-                (includes speed to track at each x,y location.)
-                format: [[x0, y0, v0],
-                         [x1, y1, v1],
-                         ...
-                         [xn, yn, vn]]
-                example:
-                    waypoints[2][1]: 
-                    returns the 3rd waypoint's y position
+            # Traffic Light segment
+            tl_line = LineString([traffic_light_fence[0:2], traffic_light_fence[2:4]])
+            # intersection between the Ideal path and the Traffic Light line.
+            intersection_flag = goal_path.intersects(tl_line)
 
-                    waypoints[5]:
-                    returns [x5, y5, v5] (6th waypoint)
-            is_ego_itm (bool): MISSING
-            closest_index: index of the waypoint which is closest to the vehicle.
-                i.e. waypoints[closest_index] gives the waypoint closest to the vehicle.
-            goal_index (current): Current goal index for the vehicle to reach
-                i.e. waypoints[goal_index] gives the goal waypoint
-            ego_state: ego state vector for the vehicle. (global frame)
-            format: [ego_x, ego_y, ego_yaw, ego_open_loop_speed]
-                ego_x and ego_y     : position (m)
-                ego_yaw             : top-down orientation [-pi to pi]
-                ego_open_loop_speed : open loop speed (m/s)
-        """
-        # Default return parameter
-        intersection_flag = False
-        traffic_light_state = None
-        dist_from_tl = float('inf')
-        tl_line = None
-
-        # If ego is after the closest index, consider that
-        if is_ego_itm:
-            waypoints = np.insert(waypoints, closest_index*waypoints.shape[1], np.array([ego_state[0], ego_state[1], 0])).reshape(waypoints.shape[0]+1, waypoints.shape[1])
-            goal_index += 1
-
-        for i in range(closest_index, goal_index):
-            # Check to see if path segment crosses any of the stop lines.
-
-            for key, traffic_light_fence in enumerate(self._traffic_lights['fences']):
-                # Ideal path segment
-                path_wp1_wp2 = LineString([waypoints[i][0:2], waypoints[i+1][0:2]])
-                # Traffic Light segment
-                tl_line = LineString([traffic_light_fence[0:2], traffic_light_fence[2:4]])
-                # intersection between the Ideal path and the Traffic Light line.
-                intersection_flag = path_wp1_wp2.intersects(tl_line)
-
-                # If there is an intersection with a stop line, update the goal state to stop before the goal line.
-                if intersection_flag:
-                    intersection_point = Point(path_wp1_wp2.intersection(tl_line).coords)
-
-                    goal_index = i
-                    traffic_light_state = self._traffic_lights['states'][key]
-
-                    ego_point = Point(ego_state[0], ego_state[1])
-                    dist_from_tl = ego_point.distance(intersection_point)
-                    break
-            
+            # If there is an intersection with a stop line, update the goal state to stop before the goal line.
             if intersection_flag:
-                break
+                intersection_point = Point(goal_path.intersection(tl_line).coords)
 
-        # Fix the added waypoint for the calculation
-        if is_ego_itm:
-            goal_index -= 1
+                closest_index = get_before_closest_index(waypoints, intersection_point)
+                dist_from_tl = ego_point.distance(intersection_point)
+                traffic_light_state = self._traffic_lights['states'][key]
 
-        return goal_index, intersection_flag, traffic_light_state, dist_from_tl, tl_line
+                intersection.append([closest_index, traffic_light_state, dist_from_tl, tl_line])
+
+        # The trafficlight can be said to be present if there is at least one trafficlight in the area.
+        intersection_flag = len(intersection) > 0
+
+        return intersection_flag, intersection
 
     # TODO: Update docstring
     def check_for_vehicle(self, waypoints, ego_point, goal_path):
