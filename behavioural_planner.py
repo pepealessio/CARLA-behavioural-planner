@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from cProfile import label
+from time import sleep
 import numpy as np
 from shapely.geometry import Point, LineString, Polygon, CAP_STYLE
 from shapely.affinity import rotate
@@ -178,7 +180,7 @@ class BehaviouralPlanner:
         
         # ---------------- GOAL INDEX ---------------------------
         # Get closest waypoint
-        closest_len, closest_index = get_closest_index(waypoints, ego_state)
+        closest_len, closest_index = get_closest_index(waypoints, ego_point)
 
         # Get goal based on the current lookahead
         goal_index, is_close_itc, goal_path = self.get_goal_index(waypoints, ego_point, ego_direction, closest_len, closest_index)
@@ -217,7 +219,7 @@ class BehaviouralPlanner:
 
         # --------------- PEDESTRIANS ------------------------------
         # Check for pedestrian presence
-        pedestrian_presence, pedestrians, ped_chech_area = self.check_for_pedestrians(waypoints, ego_point, goal_path)
+        pedestrian_presence, pedestrians, ped_chech_area = self.check_for_pedestrians(waypoints, ego_point, goal_path, ego_direction)
         # Draw all the found pedestrian
         for i, p in enumerate(pedestrians):
             self._draw(p[4], angle=ego_direction, short='--', settings=dict(color='#fc2626', label=f'Pedestrian {i}'))
@@ -534,7 +536,7 @@ class BehaviouralPlanner:
         return intersection_flag, intersection, path_bb
 
     # TODO: Update Docstring
-    def check_for_pedestrians(self, waypoints, ego_point, goal_path):
+    def check_for_pedestrians(self, waypoints, ego_point, goal_path, ego_direction):
         """UPDATE
         """
         # Default return parameter
@@ -574,34 +576,25 @@ class BehaviouralPlanner:
 #TODO: Update docstring
 def get_before_closest_index(waypoints, point):
     """"""
-    closest_len = float('Inf')
-    closest_index = 0
-
-    for i in range(len(waypoints)):
-        wp_i = Point(waypoints[i][0], waypoints[i][1])
-        temp = point.distance(wp_i)
-        if temp < closest_len:
-            closest_len = temp
-            closest_index = i
+    dist_poi2close, closest_index = get_closest_index(waypoints, point)
     
     # Check if passed
     closest_point = Point(waypoints[closest_index][0], waypoints[closest_index][1])
-    dist_poi2close = point.distance(closest_point)
 
     # If the wp is the first, nothing can be changed
     if closest_index == 0:
         return closest_index
 
     # Get path direction
-    contiguous_point = Point(waypoints[closest_index-1][0], waypoints[closest_index-1][1])
-    wp_path_direction = np.arctan2((point.y - contiguous_point.y), (point.x - contiguous_point.x))
+    prev_wp = Point(waypoints[closest_index-1][0], waypoints[closest_index-1][1])
+    wp_path_direction = np.arctan2(-(prev_wp.y - closest_point.y), (prev_wp.x - closest_point.x))
 
-    # Project the closest point in the direction
-    poi_plus_cdist = Point(point.x + closest_len * np.cos(wp_path_direction), point.y + closest_len * np.sin(wp_path_direction))
+    # Project the closest point in the direction of wp_i-1 -> wp_i
+    poi_plus_cdist = Point(closest_point.x + dist_poi2close * np.cos(wp_path_direction), closest_point.y + dist_poi2close * np.sin(wp_path_direction))
 
-    # If the distance bw closest and projected are greater to the distance bw closest and point, the closest point are passed
-    dist_close2poip = closest_point.distance(poi_plus_cdist)
-    is_ego_itm = dist_close2poip > dist_poi2close
+    # If the distance bw closest and projected are greater to the distance bw projected and point, the closest point are passed
+    dist_poi2poip = point.distance(poi_plus_cdist)
+    is_ego_itm = dist_poi2poip > dist_poi2close
 
     if is_ego_itm:
         closest_index -= 1
@@ -611,7 +604,8 @@ def get_before_closest_index(waypoints, point):
 
 # Compute the waypoint index that is closest to the ego vehicle, and return
 # it as well as the distance from the ego vehicle to that waypoint.
-def get_closest_index(waypoints, ego_state):
+# TODO: Update docstring
+def get_closest_index(waypoints, point):
     """Gets closest index a given list of waypoints to the vehicle position.
 
     args:
@@ -644,12 +638,12 @@ def get_closest_index(waypoints, ego_state):
     closest_index = 0
 
     for i in range(len(waypoints)):
-        temp = (waypoints[i][0] - ego_state[0])**2 + (waypoints[i][1] - ego_state[1])**2
+        wp_i = Point(waypoints[i][0], waypoints[i][1])
+        temp = point.distance(wp_i)
         if temp < closest_len:
             closest_len = temp
             closest_index = i
-    closest_len = np.sqrt(closest_len)
-
+    
     return closest_len, closest_index
 
 # Checks if p2 lies on segment p1-p3, if p1, p2, p3 are collinear.        
