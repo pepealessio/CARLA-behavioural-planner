@@ -63,8 +63,58 @@ class BehaviouralPlanner:
         self._renderer = self._fig.canvas.renderer
         self._legend = None
 
+    # TODO: Define the FSM
     def _init_fsm(self):
         """Init the fsm and define the states, the transition conditions, and the actions."""
+
+        # ---------- Define conditions for the transition --------------
+        def c_fl_fl(d):
+            tl = d['traffic_lights']
+            return (len(tl) == 0) or (tl[0][1] == TRAFFICLIGHT_GREEN)
+
+        def c_fl_dts(d):
+            tl = d['traffic_lights']
+            if tl:
+                return (tl[0][1] == TRAFFICLIGHT_YELLOW) or (tl[0][1] == TRAFFICLIGHT_RED)
+
+        def c_dts_fl(d):
+            tl = d['traffic_lights']
+            if tl:
+                return tl[0][1] == TRAFFICLIGHT_GREEN
+
+        def c_dts_dts(d):
+            tl = d['traffic_lights']
+            velocity = d['ego_state'][3]
+            if tl:
+                return ((tl[0][1] == TRAFFICLIGHT_YELLOW) or (tl[0][1] == TRAFFICLIGHT_RED)) and (velocity > STOP_THRESHOLD)
+
+        def c_dts_ss(d):
+            tl = d['traffic_lights']
+            velocity = d['ego_state'][3]
+            if tl:
+                return ((tl[0][1] == TRAFFICLIGHT_YELLOW) or (tl[0][1] == TRAFFICLIGHT_RED)) and (velocity <= STOP_THRESHOLD)
+        
+        # --------- Defines the action functions for the fsm -------------
+        def t_fl_1(d):
+            d['goal_index'] = d['goal_index']
+            d['goal_state'] = d['waypoints'][d['goal_index']]
+            d['follow_lead_vehicle'] = False
+            d['lead_car_state'] = None
+
+        def t_fl_2(d):
+            d['goal_index'] = d['traffic_lights'][0][0]  # first trafficlight 
+            d['goal_state'] = d['waypoints'][d['goal_index']]
+            d['follow_lead_vehicle'] = False
+            d['lead_car_state'] = None
+
+        def t_dts_2(d):
+            d['goal_index'] = d['traffic_lights'][0][0]  # first trafficlight 
+            d['goal_state'] = d['waypoints'][d['goal_index']]
+            d['goal_state'][2] = 0
+            d['follow_lead_vehicle'] = False
+            d['lead_car_state'] = None
+
+        # --------- Define the FSM -----------------
         fsm = FSM(True)
 
         # Add states
@@ -74,7 +124,13 @@ class BehaviouralPlanner:
         fsm.set_initial_state(FOLLOW_LANE)
 
         # Add transition
-        # TODO: Add the transition
+        fsm.add_transition(FOLLOW_LANE, c_fl_fl, FOLLOW_LANE, action=t_fl_1)
+        fsm.add_transition(FOLLOW_LANE, c_fl_dts, DECELERATE_TO_STOP, action=t_fl_2)
+        fsm.add_transition(DECELERATE_TO_STOP, c_dts_fl, FOLLOW_LANE, action=t_fl_1)
+        fsm.add_transition(DECELERATE_TO_STOP, c_dts_dts, DECELERATE_TO_STOP, action=t_fl_2)
+        fsm.add_transition(DECELERATE_TO_STOP, c_dts_ss, STAY_STOPPED, action=t_dts_2)
+        fsm.add_transition(STAY_STOPPED, c_dts_fl, FOLLOW_LANE, action=t_fl_1)
+        fsm.add_transition(STAY_STOPPED, c_fl_dts, STAY_STOPPED, action=t_dts_2)
 
         # Remember the FSM
         self._fsm = fsm
@@ -196,7 +252,9 @@ class BehaviouralPlanner:
         ego_direction = ego_state[2]
         # Draw the ego state point.
         self._draw(ego_point, angle=ego_direction, short='g.', settings=dict(markersize=35, label='Ego Point'))
-        
+        # Update input info about trafficlights
+        self._current_input += f'\n - Ego state: Position={tuple((round(x, 1) for x in ego_point.coords[0]))}, Orientation={round(np.degrees(ego_direction))}°, Velocity={round(ego_state[3], 2)} m/s'
+
         # ---------------- GOAL INDEX ---------------------------
         # Get closest waypoint
         closest_len, closest_index = get_closest_index(waypoints, ego_point)
@@ -260,12 +318,17 @@ class BehaviouralPlanner:
 
         # ------------- FSM EVOLUTION -------------------------------
         # Set the input
-        self._fsm.set_readings(ego_state=ego_state, 
+        self._fsm.set_readings(waypoints=waypoints,
+                               ego_state=ego_state,
+                               goal_index=goal_index, 
                                traffic_lights=traffic_lights, 
                                vehicles=vehicles, 
                                pedestrians=pedestrians)
         # Evolve the FSM
         self._fsm.process()
+
+        # Get the current state
+        self._state = self._fsm.get_current_state()
 
         # Get the output
         self._goal_index = self._fsm.get_from_memory('goal_index')
