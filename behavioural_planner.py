@@ -207,7 +207,7 @@ class BehaviouralPlanner:
         vehicle_presence, vehicles, veh_chech_area = self.check_for_vehicle(waypoints, ego_point, goal_path)
 
         # Draw all the found vehicle
-        for i, v in enumerate([v[3] for v in vehicles]):
+        for i, v in enumerate([v[4] for v in vehicles]):
             self._draw(v, angle=ego_direction, short='--', settings=dict(color='#ff4d4d', linewidth=4, label=f'Vehicle {i}'))
         # Draw the vehicle check area
         self._draw(veh_chech_area, angle=ego_direction, short='b--', settings=dict(label='Check vehicle area'))
@@ -215,7 +215,7 @@ class BehaviouralPlanner:
         # Update input info about vehicles
         for i, v in enumerate([v for v in vehicles]):
             self._current_input += f'\n - Vehicle {i}: ' + \
-                f'Position={tuple((round(x, 1) for x in v[0][:2]))}, Speed={round(v[1], 2)} m/s, Distance={round(v[2], 2)} m'
+                f'Position={tuple((round(x, 1) for x in v[1][:2]))}, Speed={round(v[2], 2)} m/s, Distance={round(v[3], 2)} m'
 
         # --------------- PEDESTRIANS ------------------------------
         # Check for pedestrian presence
@@ -520,18 +520,19 @@ class BehaviouralPlanner:
 
             if vehicle.intersects(path_bb):
                 other_vehicle_point = Point(self._vehicle['position'][key][0], self._vehicle['position'][key][1])
+                closest_index = get_before_closest_index(waypoints, other_vehicle_point)
                 dist_from_vehicle = ego_point.distance(other_vehicle_point)
 
                 vehicle_position = self._vehicle['position'][key]
                 vehicle_speed = self._vehicle['speeds'][key]
 
-                intersection.append([vehicle_position, vehicle_speed, dist_from_vehicle, vehicle])
+                intersection.append([closest_index, vehicle_position, vehicle_speed, dist_from_vehicle, vehicle])
 
         # The lead vehicle can be said to be present if there is at least one vehicle in the area.
         intersection_flag = len(intersection) > 0
 
         # Sort the vehicle by their distance from ego
-        intersection = sorted(intersection, key=lambda x: x[2])
+        intersection = sorted(intersection, key=lambda x: x[3])
 
         return intersection_flag, intersection, path_bb
 
