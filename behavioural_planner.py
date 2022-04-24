@@ -4,6 +4,7 @@ from shapely.geometry import Point, LineString, Polygon, CAP_STYLE
 from shapely.affinity import rotate
 from shapely.ops import unary_union
 import matplotlib.pyplot as plt
+from fsm.mealy import FSM
 
 
 # State machine states
@@ -47,6 +48,7 @@ class BehaviouralPlanner:
         self._before_vehicle_present        = False
         self._before_pedestrian_present     = False
         self._init_plot()
+        self._init_fsm()
 
     def _init_plot(self):
         """Initialize the environment to plot information in a live figure.
@@ -60,6 +62,22 @@ class BehaviouralPlanner:
         self._fig.canvas.draw()
         self._renderer = self._fig.canvas.renderer
         self._legend = None
+
+    def _init_fsm(self):
+        """Init the fsm and define the states, the transition conditions, and the actions."""
+        fsm = FSM(True)
+
+        # Add states
+        fsm.add_state(FOLLOW_LANE)
+        fsm.add_state(DECELERATE_TO_STOP)
+        fsm.add_state(STAY_STOPPED)
+        fsm.set_initial_state(FOLLOW_LANE)
+
+        # Add transition
+        # TODO: Add the transition
+
+        # Remember the FSM
+        self._fsm = fsm
 
     def _draw(self, geometry, angle=0, short='-', settings={}):
         """Draw a geometry object in the figure spawned by the behavioural planner.
@@ -241,8 +259,19 @@ class BehaviouralPlanner:
         self._finalize_draw()
 
         # ------------- FSM EVOLUTION -------------------------------
-        self._goal_index = goal_index
-        self._goal_state = waypoints[goal_index]
+        # Set the input
+        self._fsm.set_readings(ego_state=ego_state, 
+                               traffic_lights=traffic_lights, 
+                               vehicles=vehicles, 
+                               pedestrians=pedestrians)
+        # Evolve the FSM
+        self._fsm.process()
+
+        # Get the output
+        self._goal_index = self._fsm.get_from_memory('goal_index')
+        self._goal_state = self._fsm.get_from_memory('goal_state')
+        self._follow_lead_vehicle = self._fsm.get_from_memory('follow_lead_vehicle')
+        self._lead_car_state = self._fsm.get_from_memory('lead_car_state')
 
         # if vehicle_presence:
         #     self._follow_lead_vehicle = True
