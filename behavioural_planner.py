@@ -208,9 +208,9 @@ class BehaviouralPlanner:
 
         # Draw all the found vehicle
         for i, v in enumerate([v[4] for v in vehicles]):
-            self._draw(v, angle=ego_direction, short='--', settings=dict(color='#ff4d4d', linewidth=4, label=f'Vehicle {i}'))
+            self._draw(v, angle=ego_direction, short='--', settings=dict(color='#ff4d4d', label=f'Vehicle {i}'))
         # Draw the vehicle check area
-        self._draw(veh_chech_area, angle=ego_direction, short='b--', settings=dict(label='Check vehicle area'))
+        self._draw(veh_chech_area, angle=ego_direction, short='b--', settings=dict(linewidth=2, label='Check vehicle area'))
 
         # Update input info about vehicles
         for i, v in enumerate([v for v in vehicles]):
@@ -219,7 +219,7 @@ class BehaviouralPlanner:
 
         # --------------- PEDESTRIANS ------------------------------
         # Check for pedestrian presence
-        pedestrian_presence, pedestrians, ped_chech_area = self.check_for_pedestrians(waypoints, ego_point, goal_path, ego_direction)
+        pedestrian_presence, pedestrians, ped_chech_area = self.check_for_pedestrians(waypoints, ego_point, goal_path)
         # Draw all the found pedestrian
         for i, p in enumerate(pedestrians):
             self._draw(p[4], angle=ego_direction, short='--', settings=dict(color='#fc2626', label=f'Pedestrian {i}'))
@@ -348,7 +348,6 @@ class BehaviouralPlanner:
     # Gets the goal index in the list of waypoints, based on the lookahead and
     # the current ego state. In particular, find the earliest waypoint that has accumulated
     # arc length (including closest_len) that is greater than or equal to self._lookahead.
-    # TODO: UPDATE DOCSTRING
     def get_goal_index(self, waypoints, ego_point, ego_direction, closest_len, closest_index):
         """Gets the goal index for the vehicle. 
         
@@ -370,16 +369,16 @@ class BehaviouralPlanner:
 
                     waypoints[5]:
                     returns [x5, y5, v5] (6th waypoint)
-            ego_point (Point): MISSING
-            ego_direction (float): MISSING
+            ego_point (Point): the point represent the position of the vehicle.
+            ego_direction (float): the angle who represent the direction of teh vehicle
             closest_len: length (m) to the closest waypoint from the vehicle.
             closest_index: index of the waypoint which is closest to the vehicle.
                 i.e. waypoints[closest_index] gives the waypoint closest to the vehicle.
         returns:
             wp_index: Goal index for the vehicle to reach
                 i.e. waypoints[wp_index] gives the goal waypoint
-            is_ego_in_the_middle (bool): MISSING
-            goal_line (LineString): MISSING
+            is_ego_in_the_middle (bool): If the vehicle is after the closest index
+            goal_line (LineString): a linestring representing the ideal path
         """
         # check if ego state is in the middle of wp_i and wp_i+1 with 10^-2 meters precision
         closest_point = Point(waypoints[closest_index][0], waypoints[closest_index][1])
@@ -423,9 +422,25 @@ class BehaviouralPlanner:
 
         return goal_index % len(waypoints), is_ego_itm, arc
 
-    # TODO: UPDATE DOCSTRING
     def check_for_traffic_lights(self, waypoints, ego_point, goal_path):
-        """"""
+        """Check in the path for presence of vehicle.
+
+        Args:
+            waypoints: current waypoints to track. (global frame)
+            length and speed in m and m/s.
+            (includes speed to track at each x,y location.)
+            format: [[x0, y0, v0],
+                     [x1, y1, v1],
+                     ...
+                     [xn, yn, vn]]
+            ego_point (Point): The point represent the position of the vehicle.
+            goal_path (LineString): The linestring represent the path until the goal.
+
+        Returns:
+            [intersection_flag, intersection]:
+                intersection_flag (bool): If true, at least one vehicle is present.
+                intersection (List[Tuple[int, int, float, LineString]]): a list containing, for each traffic light, the closest index,
+                    the traffic light state, the distance from the traffic light, and the stop line of the traffic line."""
         # Check for all traffic lights 
         intersection = []
         for key, traffic_light_fence in enumerate(self._traffic_lights['fences']):
@@ -450,9 +465,26 @@ class BehaviouralPlanner:
 
         return intersection_flag, intersection
 
-    # TODO: Update docstring
     def check_for_vehicle(self, waypoints, ego_point, goal_path):
-        """UPDATE
+        """Check in the path for presence of vehicle.
+
+        Args:
+            waypoints: current waypoints to track. (global frame)
+            length and speed in m and m/s.
+            (includes speed to track at each x,y location.)
+            format: [[x0, y0, v0],
+                     [x1, y1, v1],
+                     ...
+                     [xn, yn, vn]]
+            ego_point (Point): The point represent the position of the vehicle.
+            goal_path (LineString): The linestring represent the path until the goal.
+
+        Returns:
+            [intersection_flag, intersection, path_bb]:
+                intersection_flag (bool): If true, at least one vehicle is present.
+                intersection (List[Tuple[int, Point, float, float, Polygon]]): a list containing, for each vehicle, the closest index,
+                    the position point, the speed, the distance from the vehicle, and the bounding box of the vehicle.
+                path_bb (Polygon): the check area.
         """
         # Default return parameter
         intersection_flag = False
@@ -485,9 +517,26 @@ class BehaviouralPlanner:
 
         return intersection_flag, intersection, path_bb
 
-    # TODO: Update Docstring
-    def check_for_pedestrians(self, waypoints, ego_point, goal_path, ego_direction):
-        """UPDATE
+    def check_for_pedestrians(self, waypoints, ego_point, goal_path):
+        """Check in the path for presence of pedestrians.
+
+        Args:
+            waypoints: current waypoints to track. (global frame)
+            length and speed in m and m/s.
+            (includes speed to track at each x,y location.)
+            format: [[x0, y0, v0],
+                     [x1, y1, v1],
+                     ...
+                     [xn, yn, vn]]
+            ego_point (Point): The point represent the position of the vehicle.
+            goal_path (LineString): The linestring represent the path until the goal.
+
+        Returns:
+            [intersection_flag, intersection, path_bb]:
+                intersection_flag (bool): If true, at least one pedestrian is present.
+                intersection (List[Tuple[int, Point, float, float, Polygon]]): a list containing, for each pedestrian, the closest index,
+                    the position point, the speed, the distance from the pedestrian, and the bounding box of the pedestrian.
+                path_bb (Polygon): the check area.
         """
         # Default return parameter
         intersection_flag = False
@@ -523,9 +572,30 @@ class BehaviouralPlanner:
         return intersection_flag, intersection, path_bb
 
 
-#TODO: Update docstring
 def get_before_closest_index(waypoints, point):
-    """"""
+    """Gets closest index a given list of waypoints to the point, but just if thath was not passed considering the direction
+    of the waypoints.
+    
+    Args:
+        waypoints: current waypoints to track. (global frame)
+            length and speed in m and m/s.
+            (includes speed to track at each x,y location.)
+            format: [[x0, y0, v0],
+                     [x1, y1, v1],
+                     ...
+                     [xn, yn, vn]]
+            example:
+                waypoints[2][1]: 
+                returns the 3rd waypoint's y position
+
+                waypoints[5]:
+                returns [x5, y5, v5] (6th waypoint)
+        point (Point): position to see. (global frame)
+
+    Return:
+        closest_index: index of the waypoint which is closest to the vehicle, but not after the vehicle.
+                i.e. waypoints[closest_index] gives the waypoint closest to the vehicle.
+    """
     dist_poi2close, closest_index = get_closest_index(waypoints, point)
     
     # Check if passed
@@ -552,11 +622,8 @@ def get_before_closest_index(waypoints, point):
     return closest_index
 
 
-# Compute the waypoint index that is closest to the ego vehicle, and return
-# it as well as the distance from the ego vehicle to that waypoint.
-# TODO: Update docstring
 def get_closest_index(waypoints, point):
-    """Gets closest index a given list of waypoints to the vehicle position.
+    """Gets closest index a given list of waypoints to the point.
 
     args:
         waypoints: current waypoints to track. (global frame)
@@ -572,11 +639,7 @@ def get_closest_index(waypoints, point):
 
                 waypoints[5]:
                 returns [x5, y5, v5] (6th waypoint)
-        ego_state: ego state vector for the vehicle. (global frame)
-            format: [ego_x, ego_y, ego_yaw, ego_open_loop_speed]
-                ego_x and ego_y     : position (m)
-                ego_yaw             : top-down orientation [-pi to pi]
-                ego_open_loop_speed : open loop speed (m/s)
+        point (Point): position to see. (global frame)
 
     returns:
         [closest_len, closest_index]:
