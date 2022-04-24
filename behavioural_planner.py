@@ -398,7 +398,6 @@ class BehaviouralPlanner:
         # Update lookahead if before something was present
         lookahead = self._lookahead
         if self._before_tl_present or self._before_vehicle_present or self._before_pedestrian_present:
-            print('AAAAAAAAAAAAAAAAAAAAAAA')
             lookahead += 15  # m of margin
 
         # compute a list with all the points into the path
