@@ -223,8 +223,6 @@ class BehaviouralPlanner:
         # Draw all the found pedestrian
         for i, p in enumerate(pedestrians):
             self._draw(p[4], angle=ego_direction, short='--', settings=dict(color='#fc2626', label=f'Pedestrian {i}'))
-            p_closest_wp = Point(waypoints[p[0]][0], waypoints[p[0]][1])        # Print to understand where to stop
-            self._draw(p_closest_wp, angle=ego_direction, short='.', settings=dict(markersize=5, color='#fc2626', label=f'Pedestrian {i} closest'))
         # Draw the pedestrian check area
         self._draw(ped_chech_area, angle=ego_direction, short='c:', settings=dict(label='Check pedestrian area'))
 
