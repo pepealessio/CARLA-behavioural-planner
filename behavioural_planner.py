@@ -43,6 +43,9 @@ class BehaviouralPlanner:
         self._pedestrians                   = pedestrians
         self._state_info                    = ''
         self._current_input                 = ''
+        self._before_tl_present             = False
+        self._before_vehicle_present        = False
+        self._before_pedestrian_present     = False
         self._init_plot()
 
     def _init_plot(self):
@@ -229,6 +232,11 @@ class BehaviouralPlanner:
             self._current_input += f'\n - Pedestrian {i}: ' + \
                 f'Position={tuple((round(x, 1) for x in p[1][:2]))}, Speed={round(p[2], 2)} m/s, Distance={round(p[3], 2)} m'
 
+        # --------------- Update presence of obstacles -------------
+        self._before_pedestrian_present = pedestrian_presence
+        self._before_vehicle_present = vehicle_presence
+        self._before_tl_present = traffic_light_presence
+
         # --------------- Update current input draw ----------------
         self._finalize_draw()
 
@@ -385,7 +393,13 @@ class BehaviouralPlanner:
         ego_plus_cdist = Point(ego_point.x + closest_len * np.cos(ego_direction), ego_point.y + closest_len * np.sin(ego_direction))
         dist_close2egop = closest_point.distance(ego_plus_cdist)
 
-        is_ego_itm = dist_close2egop > dist_ego2close
+        is_ego_itm = dist_close2egop > dist_ego2close - 1  # 1 m was the margin
+
+        # Update lookahead if before something was present
+        lookahead = self._lookahead
+        if self._before_tl_present or self._before_vehicle_present or self._before_pedestrian_present:
+            print('AAAAAAAAAAAAAAAAAAAAAAA')
+            lookahead += 15  # m of margin
 
         # compute a list with all the points into the path
         arc_points = [ego_point]
@@ -410,7 +424,7 @@ class BehaviouralPlanner:
                 arc_points.append(wp_i2)
                 arc_length += wp_i1.distance(wp_i2)
                 
-                if arc_length > self._lookahead: break
+                if arc_length > lookahead: break
                 wp_index += 1
 
             goal_index = wp_index
