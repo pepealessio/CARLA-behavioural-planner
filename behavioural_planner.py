@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-from cProfile import label
-from time import sleep
 import numpy as np
 from shapely.geometry import Point, LineString, Polygon, CAP_STYLE
 from shapely.affinity import rotate
