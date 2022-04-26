@@ -10,24 +10,17 @@ import argparse
 import logging
 import time
 import math
-from matplotlib import markers
-import numpy as np
-import csv
-import matplotlib.pyplot as plt
 from numpy.core.defchararray import index
 import controller2d
 import configparser 
 import local_planner
 import behavioural_planner
 import cv2
-import json 
 from math import sin, cos, pi, tan, sqrt
 from munch import DefaultMunch
 import tkinter as tk
 import threading
 from tqdm import tqdm
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.figure import Figure
 
 # Script level imports
 sys.path.append(os.path.abspath(sys.path[0] + '/..'))
@@ -1353,10 +1346,10 @@ def main():
 
     # Logging startup info
     log_level = logging.DEBUG if args.debug else logging.INFO
-    log_dir = f'./log/main_{datetime.now():%Y-%m-%d-%H-%M-%S}.log'
+    log_dir = f'./log/main_{datetime.now():%Y-%m-%d}.log'
     # Create log file if not exists
     os.makedirs(os.path.dirname(log_dir), exist_ok=True)
-    with open(log_dir, "w") as f:
+    with open(log_dir, "a") as f:
         f.write("")
     # set log config
     logging.basicConfig(format='%(asctime)s, %(levelname)s: %(message)s', datefmt='%d/%m/%Y %I:%M:%S %p', filename=log_dir, level=log_level)
