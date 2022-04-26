@@ -18,8 +18,10 @@ import behavioural_planner
 import cv2
 from math import sin, cos, pi, tan, sqrt
 from munch import DefaultMunch
+import numpy as np
 import tkinter as tk
 import threading
+from shapely.geometry import Point
 from tqdm import tqdm
 
 # Script level imports
@@ -224,6 +226,35 @@ class StateInfo(threading.Thread):
         """Destroy the window"""
         if self._show_on:
             self._root.destroy()
+
+def fix_waypoints(waypoints):
+    """Sometimes the points go back and forth in the same positions (usually in the 
+    curves), making the analysis on them complicated. This feature removes these excess points.
+    
+    Args:
+        waypoints(np.array[float, float, float]): the waypoint list. The elements represent x, y and the
+        desidered speed.
+        
+    Return:
+        waypoints(np.array[float, float, float]): the fixed waypoints.
+    """
+    fixed_wp = []
+    waypoints = waypoints.tolist()
+    to_remove = [False] * len(waypoints)
+    old_theta = None
+
+    for i in range(0, len(waypoints)-1):
+        theta = np.arctan2(-(waypoints[i][1] - waypoints[i+1][1]), (waypoints[i][0] - waypoints[i+1][0]))
+        if (old_theta != None) and (np.abs(theta - old_theta) > 2.35):
+            to_remove[i] = True
+        old_theta = theta
+
+    for i in range(len(to_remove)):
+        if to_remove[i] and not to_remove[i-1]:
+            continue
+        fixed_wp.append(waypoints[i])
+
+    return np.array(fixed_wp)
 
 def rotate_x(angle):
     R = np.mat([[ 1,         0,           0],
@@ -729,6 +760,12 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                     previuos_waypoint = waypoint
 
             waypoints = np.array(waypoints)
+
+            # ------------ Fix strange waypoints ---------------------
+            print(waypoints)
+            waypoints = fix_waypoints(waypoints)
+            print('fixed')
+            print(waypoints)
 
             #######################################################################
             # -------------- Get initial traffic lights state ---------------------
