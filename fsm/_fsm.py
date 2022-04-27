@@ -207,7 +207,7 @@ class _AbstractFSM(object):
         
         if next_state is None:
             if self._complete:
-                raise FSMException('The transition for state "{}" and the current input is not defined.'.format(self._current_state))
+                raise FSMException('The transition for state "{}" and the current input "{}" is not defined.'.format(self._current_state, self._memory))
             else:
                 next_state = self._current_state
 
