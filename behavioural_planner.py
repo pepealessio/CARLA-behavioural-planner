@@ -104,20 +104,6 @@ class BehaviouralPlanner:
         self._ax.set_aspect('equal', 'datalim')
         self._ax.invert_xaxis()
 
-
-# self._fsm.set_readings(waypoints=waypoints,
-#                                ego_state=ego_state,
-#                                closed_loop_speed=closed_loop_speed,
-#                                goal_index=goal_index,
-#                                traffic_light_presence=traffic_light_presence, 
-#                                traffic_lights=traffic_lights, 
-#                                vehicle_presence=vehicle_presence,
-#                                vehicles=vehicles,
-#                                pedestrian_presence=pedestrian_presence, 
-#                                pedestrians=pedestrians)
-
-
-    # TODO: Define the FSM
     def _define_fsm(self):
         """Init the fsm and define the states, the transition conditions, and the actions."""
 
@@ -193,14 +179,16 @@ class BehaviouralPlanner:
         def dts_fl_1(d):
             if d['traffic_light_presence']:
                 traffic_light = d['traffic_lights'][0]
-            t1 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
-            return t1
+            t1 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and (not d['traffic_light_presence'])
+            t2 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
+            return t1 or t2
 
         def dts_fl_2(d):
             if d['traffic_light_presence']:
                 traffic_light = d['traffic_lights'][0]
-            t1 = (not d['pedestrian_presence']) and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
-            return t1
+            t1 = (not d['pedestrian_presence']) and d['vehicle_presence'] and (not d['traffic_light_presence'])
+            t2 = (not d['pedestrian_presence']) and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
+            return t1 or t2
 
         def dts_dts_1(d):
             stopped = d['closed_loop_speed'] < STOP_THRESHOLD
@@ -313,14 +301,16 @@ class BehaviouralPlanner:
         def ss_fl_1(d):
             if d['traffic_light_presence']:
                 traffic_light = d['traffic_lights'][0]
-            t1 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
-            return t1
+            t1 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and (not d['traffic_light_presence'])
+            t2 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
+            return t1 or t2
 
         def ss_fl_2(d):
             if d['traffic_light_presence']:
                 traffic_light = d['traffic_lights'][0]
-            t1 = (not d['pedestrian_presence']) and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
-            return t1
+            t1 = (not d['pedestrian_presence']) and d['vehicle_presence'] and (not d['traffic_light_presence'])
+            t2 = (not d['pedestrian_presence']) and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
+            return t1 or t2
 
         def ss_ss_1(d):
             if d['traffic_light_presence']:
@@ -516,12 +506,12 @@ class BehaviouralPlanner:
         fsm.add_transition(DECELERATE_TO_STOP, dts_ss_6, STAY_STOPPED, action=t_M11)
         fsm.add_transition(STAY_STOPPED, ss_fl_1, FOLLOW_LANE, action=t_L00)
         fsm.add_transition(STAY_STOPPED, ss_fl_2, FOLLOW_LANE, action=t_L01)
-        fsm.add_transition(STAY_STOPPED, ss_ss_1, STAY_STOPPED, action=t_T00)
-        fsm.add_transition(STAY_STOPPED, ss_ss_2, STAY_STOPPED, action=t_T01)
-        fsm.add_transition(STAY_STOPPED, ss_ss_3, STAY_STOPPED, action=t_P00)
-        fsm.add_transition(STAY_STOPPED, ss_ss_4, STAY_STOPPED, action=t_M00)
-        fsm.add_transition(STAY_STOPPED, ss_ss_5, STAY_STOPPED, action=t_P01)
-        fsm.add_transition(STAY_STOPPED, ss_ss_6, STAY_STOPPED, action=t_M01)
+        fsm.add_transition(STAY_STOPPED, ss_ss_1, STAY_STOPPED, action=t_T10)
+        fsm.add_transition(STAY_STOPPED, ss_ss_2, STAY_STOPPED, action=t_T11)
+        fsm.add_transition(STAY_STOPPED, ss_ss_3, STAY_STOPPED, action=t_P10)
+        fsm.add_transition(STAY_STOPPED, ss_ss_4, STAY_STOPPED, action=t_M10)
+        fsm.add_transition(STAY_STOPPED, ss_ss_5, STAY_STOPPED, action=t_P11)
+        fsm.add_transition(STAY_STOPPED, ss_ss_6, STAY_STOPPED, action=t_M11)
 
         # Remember the FSM
         self._fsm = fsm
@@ -603,7 +593,7 @@ class BehaviouralPlanner:
         # Draw the ego state point.
         self._draw(ego_point, angle=ego_direction, short='g.', settings=dict(markersize=35, label='Ego Point'))
         # Update input info about trafficlights
-        self._current_input += f'\n - Ego state: Position={tuple((round(x, 1) for x in ego_point.coords[0]))}, Orientation={round(np.degrees(ego_direction))}°, Velocity={round(ego_state[3], 2)} m/s'
+        self._current_input += f'\n - Ego state: Position={tuple((round(x, 1) for x in ego_point.coords[0]))}, Orientation={round(np.degrees(ego_direction))}°, Velocity={round(closed_loop_speed, 2)} m/s'
 
         # ---------------- GOAL INDEX ---------------------------
         # Get closest waypoint
@@ -659,9 +649,9 @@ class BehaviouralPlanner:
                 f'Position={tuple((round(x, 1) for x in p[1][:2]))}, Speed={round(p[2], 2)} m/s, Distance={round(p[3], 2)} m'
 
         # --------------- Update presence of obstacles -------------
-        self._before_pedestrian_present = pedestrian_presence
-        self._before_vehicle_present = vehicle_presence
-        self._before_tl_present = traffic_light_presence
+        # self._before_pedestrian_present = pedestrian_presence
+        # self._before_vehicle_present = vehicle_presence
+        # self._before_tl_present = traffic_light_presence
 
         # --------------- Update current input draw ----------------
         self._finalize_draw()
