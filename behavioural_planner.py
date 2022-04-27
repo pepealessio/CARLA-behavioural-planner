@@ -48,7 +48,7 @@ class BehaviouralPlanner:
         self._before_vehicle_present        = False
         self._before_pedestrian_present     = False
         self._init_plot()
-        self._init_fsm()
+        self._define_fsm()
 
     def _init_plot(self):
         """Initialize the environment to plot information in a live figure.
@@ -62,78 +62,6 @@ class BehaviouralPlanner:
         self._fig.canvas.draw()
         self._renderer = self._fig.canvas.renderer
         self._legend = None
-
-    # TODO: Define the FSM
-    def _init_fsm(self):
-        """Init the fsm and define the states, the transition conditions, and the actions."""
-
-        # ---------- Define conditions for the transition --------------
-        def c_fl_fl(d):
-            tl = d['traffic_lights']
-            return (len(tl) == 0) or (tl[0][1] == TRAFFICLIGHT_GREEN)
-
-        def c_fl_dts(d):
-            tl = d['traffic_lights']
-            if tl:
-                return (tl[0][1] == TRAFFICLIGHT_YELLOW) or (tl[0][1] == TRAFFICLIGHT_RED)
-
-        def c_dts_fl(d):
-            tl = d['traffic_lights']
-            if tl:
-                return tl[0][1] == TRAFFICLIGHT_GREEN
-
-        def c_dts_dts(d):
-            tl = d['traffic_lights']
-            velocity = d['ego_state'][3]
-            if tl:
-                return ((tl[0][1] == TRAFFICLIGHT_YELLOW) or (tl[0][1] == TRAFFICLIGHT_RED)) and (velocity > STOP_THRESHOLD)
-
-        def c_dts_ss(d):
-            tl = d['traffic_lights']
-            velocity = d['ego_state'][3]
-            if tl:
-                return ((tl[0][1] == TRAFFICLIGHT_YELLOW) or (tl[0][1] == TRAFFICLIGHT_RED)) and (velocity <= STOP_THRESHOLD)
-        
-        # --------- Defines the action functions for the fsm -------------
-        def t_fl_1(d):
-            d['goal_index'] = d['goal_index']
-            d['goal_state'] = d['waypoints'][d['goal_index']]
-            d['follow_lead_vehicle'] = False
-            d['lead_car_state'] = None
-
-        def t_fl_2(d):
-            d['goal_index'] = d['traffic_lights'][0][0]  # first trafficlight 
-            d['goal_state'] = d['waypoints'][d['goal_index']]
-            d['follow_lead_vehicle'] = False
-            d['lead_car_state'] = None
-
-        def t_dts_2(d):
-            d['goal_index'] = d['traffic_lights'][0][0]  # first trafficlight 
-            d['goal_state'] = d['waypoints'][d['goal_index']]
-            d['goal_state'][2] = 0
-            d['follow_lead_vehicle'] = False
-            d['lead_car_state'] = None
-
-        # --------- Define the FSM -----------------
-        fsm = FSM(True)
-
-        # Add states
-        fsm.add_state(FOLLOW_LANE)
-        fsm.add_state(DECELERATE_TO_STOP)
-        fsm.add_state(STAY_STOPPED)
-        fsm.set_initial_state(FOLLOW_LANE)
-
-        # Add transition
-        fsm.add_transition(FOLLOW_LANE, c_fl_fl, FOLLOW_LANE, action=t_fl_1)
-        fsm.add_transition(FOLLOW_LANE, c_fl_dts, DECELERATE_TO_STOP, action=t_fl_2)
-        fsm.add_transition(DECELERATE_TO_STOP, c_dts_fl, FOLLOW_LANE, action=t_fl_1)
-        fsm.add_transition(DECELERATE_TO_STOP, c_dts_dts, DECELERATE_TO_STOP, action=t_fl_2)
-        fsm.add_transition(DECELERATE_TO_STOP, c_dts_ss, STAY_STOPPED, action=t_dts_2)
-        fsm.add_transition(STAY_STOPPED, c_dts_fl, FOLLOW_LANE, action=t_fl_1)
-        fsm.add_transition(STAY_STOPPED, c_fl_dts, STAY_STOPPED, action=t_dts_2)
-
-        # Remember the FSM
-        self._fsm = fsm
 
     def _draw(self, geometry, angle=0, short='-', settings={}):
         """Draw a geometry object in the figure spawned by the behavioural planner.
@@ -175,6 +103,428 @@ class BehaviouralPlanner:
             self._legend = None
         self._ax.set_aspect('equal', 'datalim')
         self._ax.invert_xaxis()
+
+
+# self._fsm.set_readings(waypoints=waypoints,
+#                                ego_state=ego_state,
+#                                closed_loop_speed=closed_loop_speed,
+#                                goal_index=goal_index,
+#                                traffic_light_presence=traffic_light_presence, 
+#                                traffic_lights=traffic_lights, 
+#                                vehicle_presence=vehicle_presence,
+#                                vehicles=vehicles,
+#                                pedestrian_presence=pedestrian_presence, 
+#                                pedestrians=pedestrians)
+
+
+    # TODO: Define the FSM
+    def _define_fsm(self):
+        """Init the fsm and define the states, the transition conditions, and the actions."""
+
+        # ---------- Define conditions for the transition --------------
+        def fl_fl_1(d):
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+                can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            t1 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and (not d['traffic_light_presence'])
+            t2 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
+            t3 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and can_pass
+            return t1 or t2 or t3
+
+        def fl_fl_2(d):
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+                can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            t1 = (not d['pedestrian_presence']) and d['vehicle_presence'] and (not d['traffic_light_presence'])
+            t2 = (not d['pedestrian_presence']) and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
+            t3 = (not d['pedestrian_presence']) and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and can_pass
+            return t1 or t2 or t3
+
+        def fl_dts_1(d):
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+                can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            t1 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and not can_pass
+            t2 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED)
+            return t1 or t2
+
+        def fl_dts_2(d):
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+                can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            t1 = (not d['pedestrian_presence']) and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and not can_pass
+            t2 = (not d['pedestrian_presence']) and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED)
+            return t1 or t2
+
+        def fl_dts_3(d):
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+                can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            t1 = d['pedestrian_presence'] and (not d['vehicle_presence']) and (not d['traffic_light_presence'])
+            t2 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
+            t3 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and can_pass
+            return t1 or t2 or t3 
+
+        def fl_dts_4(d):
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+                can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            t1 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and not can_pass
+            t2 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED)
+            return t1 or t2
+
+        def fl_dts_5(d):
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+                can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            t1 = d['pedestrian_presence'] and d['vehicle_presence'] and (not d['traffic_light_presence'])
+            t2 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
+            t3 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and can_pass
+            return t1 or t2 or t3
+
+        def fl_dts_6(d):
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+                can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            t1 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and not can_pass
+            t2 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED)
+            return t1 or t2
+
+        def dts_fl_1(d):
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+            t1 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
+            return t1
+
+        def dts_fl_2(d):
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+            t1 = (not d['pedestrian_presence']) and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
+            return t1
+
+        def dts_dts_1(d):
+            stopped = d['closed_loop_speed'] < STOP_THRESHOLD
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+            t1 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and (not stopped)
+            t2 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED) and (not stopped)
+            return t1 or t2
+
+        def dts_dts_2(d):
+            stopped = d['closed_loop_speed'] < STOP_THRESHOLD
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+            t1 = (not d['pedestrian_presence']) and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and (not stopped)
+            t2 = (not d['pedestrian_presence']) and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED) and (not stopped)
+            return t1 or t2
+
+        def dts_dts_3(d):
+            stopped = d['closed_loop_speed'] < STOP_THRESHOLD
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+                can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            t1 = d['pedestrian_presence'] and (not d['vehicle_presence']) and (not d['traffic_light_presence']) and (not stopped)
+            t2 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN) and (not stopped)
+            t3 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and can_pass and (not stopped)
+            return t1 or t2 or t3
+
+        def dts_dts_4(d):
+            stopped = d['closed_loop_speed'] < STOP_THRESHOLD
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+                can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            t1 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and (not can_pass) and (not stopped)
+            t2 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED) and (not stopped)
+            return t1 or t2
+
+        def dts_dts_5(d):
+            stopped = d['closed_loop_speed'] < STOP_THRESHOLD
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+                can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            t1 = d['pedestrian_presence'] and d['vehicle_presence'] and (not d['traffic_light_presence']) and (not stopped)
+            t2 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN) and (not stopped)
+            t3 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and can_pass and (not stopped)
+            return t1 or t2 or t3
+
+        def dts_dts_6(d):
+            stopped = d['closed_loop_speed'] < STOP_THRESHOLD
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+                can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            t1 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and (not can_pass) and (not stopped)
+            t2 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED) and (not stopped)
+            return t1 or t2
+
+        def dts_ss_1(d):
+            stopped = d['closed_loop_speed'] < STOP_THRESHOLD
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+            t1 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and stopped
+            t2 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED) and stopped
+            return t1 or t2
+
+        def dts_ss_2(d):
+            stopped = d['closed_loop_speed'] < STOP_THRESHOLD
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+            t1 = (not d['pedestrian_presence']) and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and stopped
+            t2 = (not d['pedestrian_presence']) and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED) and stopped
+            return t1 or t2
+
+        def dts_ss_3(d):
+            stopped = d['closed_loop_speed'] < STOP_THRESHOLD
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+                can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            t1 = d['pedestrian_presence'] and (not d['vehicle_presence']) and (not d['traffic_light_presence']) and stopped
+            t2 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN) and stopped
+            t3 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and can_pass and stopped
+            return t1 or t2 or t3
+
+        def dts_ss_4(d):
+            stopped = d['closed_loop_speed'] < STOP_THRESHOLD
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+                can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            t1 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and (not can_pass) and stopped
+            t2 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED) and stopped
+            return t1 or t2
+
+        def dts_ss_5(d):
+            stopped = d['closed_loop_speed'] < STOP_THRESHOLD
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+                can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            t1 = d['pedestrian_presence'] and d['vehicle_presence'] and (not d['traffic_light_presence']) and stopped
+            t2 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN) and stopped
+            t3 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and can_pass and stopped
+            return t1 or t2 or t3
+
+        def dts_ss_6(d):
+            stopped = d['closed_loop_speed'] < STOP_THRESHOLD
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+                can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            t1 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and (not can_pass) and stopped
+            t2 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED) and stopped
+            return t1 or t2
+
+        def ss_fl_1(d):
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+            t1 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
+            return t1
+
+        def ss_fl_2(d):
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+            t1 = (not d['pedestrian_presence']) and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
+            return t1
+
+        def ss_ss_1(d):
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+            t1 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW)
+            t2 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED) 
+            return t1 or t2
+
+        def ss_ss_2(d):
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+            t1 = (not d['pedestrian_presence']) and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW)
+            t2 = (not d['pedestrian_presence']) and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED) 
+            return t1 or t2
+
+        def ss_ss_3(d):
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+                can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            t1 = d['pedestrian_presence'] and (not d['vehicle_presence']) and (not d['traffic_light_presence'])
+            t2 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
+            t3 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and can_pass
+            return t1 or t2 or t3
+
+        def ss_ss_4(d):
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+                can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            t1 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and (not can_pass)
+            t2 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED)
+            return t1 or t2
+
+        def ss_ss_5(d):
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+                can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            t1 = d['pedestrian_presence'] and d['vehicle_presence'] and (not d['traffic_light_presence'])
+            t2 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
+            t3 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and can_pass
+            return t1 or t2 or t3
+
+        def ss_ss_6(d):
+            if d['traffic_light_presence']:
+                traffic_light = d['traffic_lights'][0]
+                can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            t1 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and (not can_pass)
+            t2 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED)
+            return t1 or t2
+        
+        # --------- Defines the action functions for the fsm -------------
+        def t_L00(d):
+            d['goal_state'] = d['waypoints'][d['goal_index']]
+            d['follow_lead_vehicle'] = False
+            d['lead_car_state'] = None
+
+        def t_L01(d):
+            lead_vehicle = d['vehicles'][0]
+            d['goal_state'] = d['waypoints'][d['goal_index']]
+            d['follow_lead_vehicle'] = True
+            d['lead_car_state'] = [*lead_vehicle[1][0:2], lead_vehicle[2]]
+
+        def t_T00(d):
+            traffic_light = d['traffic_lights'][0]
+            d['goal_index'] = traffic_light[0]
+            d['goal_state'] = d['waypoints'][d['goal_index']]
+            d['follow_lead_vehicle'] = False
+            d['lead_car_state'] = None
+
+        def t_T01(d):
+            traffic_light = d['traffic_lights'][0]
+            lead_vehicle = d['vehicles'][0]
+            d['goal_index'] = traffic_light[0]
+            d['goal_state'] = d['waypoints'][d['goal_index']]
+            d['follow_lead_vehicle'] = True
+            d['lead_car_state'] = [*lead_vehicle[1][0:2], lead_vehicle[2]]
+
+        def t_T10(d):
+            traffic_light = d['traffic_lights'][0]
+            d['goal_index'] = traffic_light[0]
+            d['goal_state'] = d['waypoints'][d['goal_index']]
+            d['goal_state'][2] = 0
+            d['follow_lead_vehicle'] = False
+            d['lead_car_state'] = None
+
+        def t_T11(d):
+            traffic_light = d['traffic_lights'][0]
+            lead_vehicle = d['vehicles'][0]
+            d['goal_index'] = traffic_light[0]
+            d['goal_state'] = d['waypoints'][d['goal_index']]
+            d['goal_state'][2] = 0
+            d['follow_lead_vehicle'] = True
+            d['lead_car_state'] = [*lead_vehicle[1][0:2], lead_vehicle[2]]
+        
+        def t_P00(d):
+            pedestrian = d['pedestrians'][0]
+            d['goal_index'] = pedestrian[0]
+            d['goal_state'] = d['waypoints'][d['goal_index']]
+            d['follow_lead_vehicle'] = False
+            d['lead_car_state'] = None
+
+        def t_P01(d):
+            pedestrian = d['pedestrians'][0]
+            lead_vehicle = d['vehicles'][0]
+            d['goal_index'] = pedestrian[0]
+            d['goal_state'] = d['waypoints'][d['goal_index']]
+            d['follow_lead_vehicle'] = True
+            d['lead_car_state'] = [*lead_vehicle[1][0:2], lead_vehicle[2]]
+
+        def t_P10(d):
+            pedestrian = d['pedestrians'][0]
+            d['goal_index'] = pedestrian[0]
+            d['goal_state'] = d['waypoints'][d['goal_index']]
+            d['goal_state'][2] = 0
+            d['follow_lead_vehicle'] = False
+            d['lead_car_state'] = None
+
+        def t_P11(d):
+            pedestrian = d['pedestrians'][0]
+            lead_vehicle = d['vehicles'][0]
+            d['goal_index'] = pedestrian[0]
+            d['goal_state'] = d['waypoints'][d['goal_index']]
+            d['goal_state'][2] = 0
+            d['follow_lead_vehicle'] = True
+            d['lead_car_state'] = [*lead_vehicle[1][0:2], lead_vehicle[2]]
+
+        def t_M00(d):
+            pedestrian = d['pedestrians'][0]
+            traffic_light = d['traffic_lights'][0]
+            d['goal_index'] = np.min((traffic_light[0], pedestrian[0]))
+            d['goal_state'] = d['waypoints'][d['goal_index']]
+            d['follow_lead_vehicle'] = False
+            d['lead_car_state'] = None
+
+        def t_M01(d):
+            pedestrian = d['pedestrians'][0]
+            traffic_light = d['traffic_lights'][0]
+            lead_vehicle = d['vehicles'][0]
+            d['goal_index'] = np.min((traffic_light[0], pedestrian[0]))
+            d['goal_state'] = d['waypoints'][d['goal_index']]
+            d['follow_lead_vehicle'] = True
+            d['lead_car_state'] = [*lead_vehicle[1][0:2], lead_vehicle[2]]
+
+        def t_M10(d):
+            pedestrian = d['pedestrians'][0]
+            traffic_light = d['traffic_lights'][0]
+            d['goal_index'] = np.min((traffic_light[0], pedestrian[0]))
+            d['goal_state'] = d['waypoints'][d['goal_index']]
+            d['goal_state'][2] = 0
+            d['follow_lead_vehicle'] = False
+            d['lead_car_state'] = None
+
+        def t_M11(d):
+            pedestrian = d['pedestrians'][0]
+            traffic_light = d['traffic_lights'][0]
+            lead_vehicle = d['vehicles'][0]
+            d['goal_index'] = np.min((traffic_light[0], pedestrian[0]))
+            d['goal_state'] = d['waypoints'][d['goal_index']]
+            d['goal_state'][2] = 0
+            d['follow_lead_vehicle'] = True
+            d['lead_car_state'] = [*lead_vehicle[1][0:2], lead_vehicle[2]]
+
+        # --------- Define the FSM -----------------
+        fsm = FSM(True)
+
+        # Add states
+        fsm.add_state(FOLLOW_LANE)
+        fsm.add_state(DECELERATE_TO_STOP)
+        fsm.add_state(STAY_STOPPED)
+        fsm.set_initial_state(FOLLOW_LANE)
+
+        # Add transition
+        fsm.add_transition(FOLLOW_LANE, fl_fl_1, FOLLOW_LANE, action=t_L00)
+        fsm.add_transition(FOLLOW_LANE, fl_fl_2, FOLLOW_LANE, action=t_L01)
+        fsm.add_transition(FOLLOW_LANE, fl_dts_1, DECELERATE_TO_STOP, action=t_T00)
+        fsm.add_transition(FOLLOW_LANE, fl_dts_2, DECELERATE_TO_STOP, action=t_T01)
+        fsm.add_transition(FOLLOW_LANE, fl_dts_3, DECELERATE_TO_STOP, action=t_P00)
+        fsm.add_transition(FOLLOW_LANE, fl_dts_4, DECELERATE_TO_STOP, action=t_M00)
+        fsm.add_transition(FOLLOW_LANE, fl_dts_5, DECELERATE_TO_STOP, action=t_P01)
+        fsm.add_transition(FOLLOW_LANE, fl_dts_6, DECELERATE_TO_STOP, action=t_M01)
+        fsm.add_transition(DECELERATE_TO_STOP, dts_fl_1, FOLLOW_LANE, action=t_L00)
+        fsm.add_transition(DECELERATE_TO_STOP, dts_fl_2, FOLLOW_LANE, action=t_L01)
+        fsm.add_transition(DECELERATE_TO_STOP, dts_dts_1, DECELERATE_TO_STOP, action=t_T00)
+        fsm.add_transition(DECELERATE_TO_STOP, dts_dts_2, DECELERATE_TO_STOP, action=t_T01)
+        fsm.add_transition(DECELERATE_TO_STOP, dts_dts_3, DECELERATE_TO_STOP, action=t_P00)
+        fsm.add_transition(DECELERATE_TO_STOP, dts_dts_4, DECELERATE_TO_STOP, action=t_M00)
+        fsm.add_transition(DECELERATE_TO_STOP, dts_dts_5, DECELERATE_TO_STOP, action=t_P01)
+        fsm.add_transition(DECELERATE_TO_STOP, dts_dts_6, DECELERATE_TO_STOP, action=t_M01)
+        fsm.add_transition(DECELERATE_TO_STOP, dts_ss_1, STAY_STOPPED, action=t_T10)
+        fsm.add_transition(DECELERATE_TO_STOP, dts_ss_2, STAY_STOPPED, action=t_T11)
+        fsm.add_transition(DECELERATE_TO_STOP, dts_ss_3, STAY_STOPPED, action=t_P10)
+        fsm.add_transition(DECELERATE_TO_STOP, dts_ss_4, STAY_STOPPED, action=t_M10)
+        fsm.add_transition(DECELERATE_TO_STOP, dts_ss_5, STAY_STOPPED, action=t_P11)
+        fsm.add_transition(DECELERATE_TO_STOP, dts_ss_6, STAY_STOPPED, action=t_M11)
+        fsm.add_transition(STAY_STOPPED, ss_fl_1, FOLLOW_LANE, action=t_L00)
+        fsm.add_transition(STAY_STOPPED, ss_fl_2, FOLLOW_LANE, action=t_L01)
+        fsm.add_transition(STAY_STOPPED, ss_ss_1, STAY_STOPPED, action=t_T00)
+        fsm.add_transition(STAY_STOPPED, ss_ss_2, STAY_STOPPED, action=t_T01)
+        fsm.add_transition(STAY_STOPPED, ss_ss_3, STAY_STOPPED, action=t_P00)
+        fsm.add_transition(STAY_STOPPED, ss_ss_4, STAY_STOPPED, action=t_M00)
+        fsm.add_transition(STAY_STOPPED, ss_ss_5, STAY_STOPPED, action=t_P01)
+        fsm.add_transition(STAY_STOPPED, ss_ss_6, STAY_STOPPED, action=t_M01)
+
+        # Remember the FSM
+        self._fsm = fsm
     
     def set_lookahead(self, lookahead):
         self._lookahead = lookahead
@@ -320,9 +670,13 @@ class BehaviouralPlanner:
         # Set the input
         self._fsm.set_readings(waypoints=waypoints,
                                ego_state=ego_state,
-                               goal_index=goal_index, 
+                               closed_loop_speed=closed_loop_speed,
+                               goal_index=goal_index,
+                               traffic_light_presence=traffic_light_presence, 
                                traffic_lights=traffic_lights, 
-                               vehicles=vehicles, 
+                               vehicle_presence=vehicle_presence,
+                               vehicles=vehicles,
+                               pedestrian_presence=pedestrian_presence, 
                                pedestrians=pedestrians)
         # Evolve the FSM
         self._fsm.process()
@@ -335,113 +689,6 @@ class BehaviouralPlanner:
         self._goal_state = self._fsm.get_from_memory('goal_state')
         self._follow_lead_vehicle = self._fsm.get_from_memory('follow_lead_vehicle')
         self._lead_car_state = self._fsm.get_from_memory('lead_car_state')
-
-        # if vehicle_presence:
-        #     self._follow_lead_vehicle = True
-        #     self._lead_car_state = [*vehicle_position[0:2], vehicle_speed]
-        # else:
-        #     self._follow_lead_vehicle = False
-        #     self._lead_car_state = None
-
-        # # FOLLOW_LANE: In this state the vehicle move to reach the goal.
-        # if self._state == FOLLOW_LANE:
-
-        #     # 0,x,x,x; 1,G,x,x
-        #     if not traffic_light_present or (traffic_light_present and traffic_light_state == TRAFFICLIGHT_GREEN):
-        #         # Set the next state
-        #         self._state = FOLLOW_LANE
-        #         # Set goal
-        #         self._goal_index = goal_index
-        #         self._goal_state = waypoints[goal_index]
-
-        #     # 1,Y,1,x
-        #     elif traffic_light_present and \
-        #             (traffic_light_state == TRAFFICLIGHT_YELLOW) and \
-        #             not (distance_from_traffic_lights / ego_state[3] < TRAFFICLIGHT_YELLOW_MIN_TIME):
-        #         # Set the next state
-        #         self._state = FOLLOW_LANE         
-        #         # Set goal
-        #         self._goal_index = goal_index
-        #         self._goal_state = waypoints[goal_index]
-            
-        #     # 1,Y,0,x
-        #     elif traffic_light_present and \
-        #             (traffic_light_state == TRAFFICLIGHT_GREEN) and \
-        #             (distance_from_traffic_lights / ego_state[3] < TRAFFICLIGHT_YELLOW_MIN_TIME):
-        #         # Set the next state
-        #         self._state = DECELERATE_TO_STOP         
-        #         # Set goal
-        #         self._goal_index = traffic_lights_index
-        #         self._goal_state = waypoints[traffic_lights_index]
-
-        #     # 1,R,x,x
-        #     elif traffic_light_present and \
-        #             (traffic_light_state == TRAFFICLIGHT_RED):
-        #         # Set the next state
-        #         self._state = DECELERATE_TO_STOP         
-        #         # Set goal
-        #         self._goal_index = traffic_lights_index
-        #         self._goal_state = waypoints[traffic_lights_index]
-        
-        # # DECELERATE_TO_STOP: In this state we suppose to have enough space to slow down until the 
-        # # stop line. 
-        # elif self._state == DECELERATE_TO_STOP:
-                        
-        #     # 0,x,x,x, 1,G,x,x
-        #     if not traffic_light_present or \
-        #             (traffic_light_present and (traffic_light_state == TRAFFICLIGHT_GREEN)):
-        #         # Set the next state
-        #         self._state = FOLLOW_LANE
-        #         # Set goal
-        #         self._goal_index = goal_index
-        #         self._goal_state = waypoints[goal_index]
-
-        #     # 1,R,x,0; 1,Y,x,0
-        #     elif traffic_light_present and \
-        #             (traffic_light_state == TRAFFICLIGHT_YELLOW or traffic_light_state == TRAFFICLIGHT_RED) and \
-        #             not(abs(closed_loop_speed) <= STOP_THRESHOLD):
-        #         # Set the next state
-        #         self._state = DECELERATE_TO_STOP
-        #         # Set goal
-        #         self._goal_index = traffic_lights_index
-        #         self._goal_state = waypoints[traffic_lights_index]
-        #         self._goal_state[2] = 0
-
-        #     # 1,R,x,1; 1,Y,x,1
-        #     elif traffic_light_present and \
-        #             (traffic_light_state == TRAFFICLIGHT_YELLOW or traffic_light_state == TRAFFICLIGHT_RED) and \
-        #             (abs(closed_loop_speed) <= STOP_THRESHOLD):
-        #         # Set the next state
-        #         self._state = STAY_STOPPED
-        #         # Set goal
-        #         self._goal_index = traffic_lights_index
-        #         self._goal_state = waypoints[traffic_lights_index]
-        #         self._goal_state[2] = 0
-
-        # # STAY_STOPPED: In this state the vehicle is stopped, waiting for the green light.
-        # elif self._state == STAY_STOPPED:
-
-        #     # 0,0,0,0; 1,G,x,x                
-        #     if not traffic_light_present or \
-        #             (traffic_light_present and (traffic_light_state == TRAFFICLIGHT_GREEN)):
-        #         # Set the next state
-        #         self._state = FOLLOW_LANE
-        #         # Set goal
-        #         self._goal_index = goal_index
-        #         self._goal_state = waypoints[goal_index]
-
-        #     # 1,Y,x,x; 1,R,x,x  
-        #     elif traffic_light_present and \
-        #             (traffic_light_state == TRAFFICLIGHT_YELLOW or traffic_light_state == TRAFFICLIGHT_RED):
-        #         # Set the next state
-        #         self._state = STAY_STOPPED
-        #         # Set goal
-        #         self._goal_index = traffic_lights_index
-        #         self._goal_state = waypoints[traffic_lights_index]
-        #         self._goal_state[2] = 0
-                
-        # else:
-        #     raise ValueError('Invalid state value.')
 
     # Gets the goal index in the list of waypoints, based on the lookahead and
     # the current ego state. In particular, find the earliest waypoint that has accumulated
