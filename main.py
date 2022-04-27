@@ -163,7 +163,7 @@ class StateInfo(threading.Thread):
             # Build the window
             self._root = tk.Tk()
             self._root.protocol("WM_DELETE_WINDOW", self._callback)
-            self._root.geometry("600x350")
+            self._root.geometry("640x350")
             self._root.title("FSM info")
             self._root.configure(background='white')
 
@@ -180,6 +180,7 @@ class StateInfo(threading.Thread):
 
             tk.Label(self._root, text='Behavioural Planner State:', font=("Microsoft YaHei UI", 16), bg='white', anchor="w").grid(row=2, column=0, sticky='nswe')
 
+            self._prev_state_text = 'loading ...'
             self._state_text = tk.Text(self._root, width=15, height=0, font=("Microsoft YaHei UI Light", 11))
             self._state_text.bind("<Key>", lambda e: "break")
             self._state_text['bg'] = 'white'
@@ -214,8 +215,15 @@ class StateInfo(threading.Thread):
 
     def set_state_info(self, info):
         """Update the state info box."""
+        def toggle_color():
+            self._state_text['bg'] = 'white'
+        
         state_info, input_info = info
         if self._show_on:
+            if state_info != self._prev_state_text:
+                self._state_text['bg'] = 'green'
+                self._state_text.after(300, toggle_color)
+                self._prev_state_text = state_info
             self._state_text.delete('1.0', tk.END)
             self._state_text.insert(tk.END, state_info)
 
