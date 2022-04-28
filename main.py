@@ -842,6 +842,7 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
             # This is where we take the controller2d.py class
             # and apply it to the simulator
             controller = controller2d.Controller2D(waypoints)
+            
 
             #############################################
             # Vehicle Trajectory Live Plotting Setup
@@ -1123,6 +1124,12 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
 
                     # Perform a state transition in the behavioural planner.
                     bp.transition_state(waypoints, ego_state, current_speed)
+
+                    # update waypoint
+                    waypoints = bp.get_waypoints()
+
+                    # update controller
+                    controller.update_waypoints(waypoint)
 
                     # Compute the goal state set from the behavioural planner's computed goal state.
                     goal_state_set = lp.get_goal_state_set(bp._goal_index, bp._goal_state, waypoints, ego_state)

@@ -39,6 +39,7 @@ class BehaviouralPlanner:
         self._goal_index                    = 0
         self._stop_count                    = 0
         self._lookahead_collision_index     = 0
+        self._waypoints                     = None
         self._traffic_lights                = traffic_lights
         self._vehicle                       = vehicle
         self._pedestrians                   = pedestrians
@@ -519,6 +520,9 @@ class BehaviouralPlanner:
     def set_lookahead(self, lookahead):
         self._lookahead = lookahead
 
+    def get_waypoints(self):
+        return self._waypoints
+
     def set_traffic_light(self, traffic_lights):
         """Update the traffic light information. These are coming from Carla."""
         for k in traffic_lights:
@@ -581,6 +585,8 @@ class BehaviouralPlanner:
             STOP_COUNTS     : Number of cycles (simulation iterations) 
                               before moving from stop sign.
         """
+        self._waypoints = waypoints
+
         # Update state info
         self._state_info = f'Current State: {self._state}'
         # Update input info
@@ -642,6 +648,8 @@ class BehaviouralPlanner:
             self._draw(p[4], angle=ego_direction, short='--', settings=dict(color='#fc2626', label=f'Pedestrian {i}'))
         # Draw the pedestrian check area
         self._draw(ped_chech_area, angle=ego_direction, short='c:', settings=dict(label='Check pedestrian area'))
+        if pedestrian_presence:
+            self._draw(Point(self._waypoints[pedestrians[0][0]][0:2]), ego_direction, "r.", dict(markersize=20))
 
         # Update input info about vehicles
         for i, p in enumerate([p for p in pedestrians]):
@@ -794,7 +802,7 @@ class BehaviouralPlanner:
             if intersection_flag:
                 intersection_point = Point(goal_path.intersection(tl_line).coords)
 
-                closest_index = get_before_closest_index(waypoints, intersection_point)
+                _, closest_index = get_closest_index(waypoints, intersection_point)
                 dist_from_tl = ego_point.distance(intersection_point)
                 traffic_light_state = self._traffic_lights['states'][key]
 
@@ -841,7 +849,7 @@ class BehaviouralPlanner:
 
             if vehicle.intersects(path_bb):
                 other_vehicle_point = Point(self._vehicle['position'][key][0], self._vehicle['position'][key][1])
-                closest_index = get_before_closest_index(waypoints, other_vehicle_point)
+                _, closest_index = get_closest_index(waypoints, other_vehicle_point)
                 dist_from_vehicle = ego_point.distance(other_vehicle_point)
 
                 vehicle_position = self._vehicle['position'][key]
@@ -895,7 +903,7 @@ class BehaviouralPlanner:
 
             if pedestrian.intersects(path_bb):
                 other_pedestrian_point = Point(self._pedestrians['position'][key][0], self._pedestrians['position'][key][1])
-                closest_index = get_before_closest_index(waypoints, other_pedestrian_point)
+                closest_index = self.get_stop_index(ego_point, other_pedestrian_point)
                 dist_from_pedestrian = ego_point.distance(other_pedestrian_point)
 
                 pedestrian_position = self._pedestrians['position'][key]
@@ -910,57 +918,33 @@ class BehaviouralPlanner:
         intersection = sorted(intersection, key=lambda x: x[3])
 
         return intersection_flag, intersection, path_bb
-
-
-def get_before_closest_index(waypoints, point):
-    """Gets closest index a given list of waypoints to the point, but just if thath was not passed considering the direction
-    of the waypoints.
     
-    Args:
-        waypoints: current waypoints to track. (global frame)
-            length and speed in m and m/s.
-            (includes speed to track at each x,y location.)
-            format: [[x0, y0, v0],
-                     [x1, y1, v1],
-                     ...
-                     [xn, yn, vn]]
-            example:
-                waypoints[2][1]: 
-                returns the 3rd waypoint's y position
+    # NOTE: case obstacle_index = 0 is not defined 
+    def get_stop_index(self, ego_point, obstacle_point, margin=1):
+        _, obstacle_index = get_closest_index(self._waypoints,obstacle_point)
+        is_obstacle_before, obst_proj_point = check_is_before(self._waypoints, obstacle_point, obstacle_index)
 
-                waypoints[5]:
-                returns [x5, y5, v5] (6th waypoint)
-        point (Point): position to see. (global frame)
+        is_ego_before_prev, ego_proj_point = check_is_before(self._waypoints, ego_point, obstacle_index-1)
+        
+        if not is_obstacle_before:
+            stop_index = obstacle_index
+        else:
+            if is_ego_before_prev:
+                stop_index = obstacle_index-1
+            else:
+                # If there's not enough space between the waypoints, don't add the waypoint
+                middle_point = LineString([ego_proj_point, obst_proj_point]).interpolate(0.4, normalized=True)
+                distance_from_closest, closest_index = get_closest_index(self._waypoints, middle_point)
+                if distance_from_closest > margin:
+                    # Add new waypoint
+                    wps = self._waypoints.tolist()
+                    wps.insert(obstacle_index, [middle_point.x, middle_point.y, self._waypoints[obstacle_index][2]])
+                    self._waypoints = np.array(wps)
 
-    Return:
-        closest_index: index of the waypoint which is closest to the vehicle, but not after the vehicle.
-                i.e. waypoints[closest_index] gives the waypoint closest to the vehicle.
-    """
-    dist_poi2close, closest_index = get_closest_index(waypoints, point)
-    
-    # Check if passed
-    closest_point = Point(waypoints[closest_index][0], waypoints[closest_index][1])
-
-    # If the wp is the first, nothing can be changed
-    if closest_index == 0:
-        return closest_index
-
-    # Get path direction
-    prev_wp = Point(waypoints[closest_index-1][0], waypoints[closest_index-1][1])
-    wp_path_direction = np.arctan2(-(prev_wp.y - closest_point.y), (prev_wp.x - closest_point.x))
-
-    # Project the closest point in the direction of wp_i-1 -> wp_i
-    poi_plus_cdist = Point(closest_point.x + dist_poi2close * np.cos(wp_path_direction), closest_point.y + dist_poi2close * np.sin(wp_path_direction))
-
-    # If the distance bw closest and projected are greater to the distance bw projected and point, the closest point are passed
-    dist_poi2poip = point.distance(poi_plus_cdist)
-    is_ego_itm = dist_poi2poip > dist_poi2close
-
-    if is_ego_itm:
-        closest_index -= 1
-    
-    return closest_index
-
+                    stop_index = obstacle_index
+                else:
+                    stop_index = closest_index
+        return stop_index 
 
 def get_closest_index(waypoints, point):
     """Gets closest index a given list of waypoints to the point.
@@ -999,10 +983,47 @@ def get_closest_index(waypoints, point):
     
     return closest_len, closest_index
 
-# Checks if p2 lies on segment p1-p3, if p1, p2, p3 are collinear.        
-def pointOnSegment(p1, p2, p3):
-    if (p2[0] <= max(p1[0], p3[0]) and (p2[0] >= min(p1[0], p3[0])) and \
-       (p2[1] <= max(p1[1], p3[1])) and (p2[1] >= min(p1[1], p3[1]))):
-        return True
-    else:
-        return False
+
+def check_is_after(waypoint,point,wp_index):
+    wp = Point(waypoint[wp_index][0:2])
+   
+    if wp_index==0:
+        return False, wp
+    
+    prev_wp = Point(waypoint[wp_index-1][0:2])
+    
+    segment = LineString([prev_wp, wp])
+    proj_point = project_on_linestring(point, segment)
+    dist_wp_prev = wp.distance(prev_wp)
+    dist_prev_proj = prev_wp.distance(proj_point)
+
+    return (dist_wp_prev <= dist_prev_proj), proj_point
+
+
+def check_is_before(waypoint,point,wp_index):
+    is_before, proj_point = check_is_after(waypoint,point,wp_index)
+    return not is_before, proj_point
+
+
+def project_on_linestring(point, linestring):
+    """Project point on a linestring.
+    
+    .. math::
+        cos(alpha) = (v - u).(x - u) / (|x - u|*|v - u|)
+        d = cos(alpha)*|x - u| = (v - u).(x - u) / |v - u|
+        P(x) = u + d*(v - u)/|v - u|
+    
+    """
+    x = np.array(point.coords[0])
+
+    u = np.array(linestring.coords[0])
+    v = np.array(linestring.coords[len(linestring.coords)-1])
+
+    n = v - u
+    n /= np.linalg.norm(n, 2)
+
+    p = u + n*np.dot(x - u, n)
+
+    return Point(p)
+
+
