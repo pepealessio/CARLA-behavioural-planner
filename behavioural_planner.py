@@ -360,7 +360,7 @@ class BehaviouralPlanner:
             if intersection_flag:
                 intersection_point = Point(goal_path.intersection(tl_line).coords)
 
-                _, closest_index = self.get_stop_index(ego_point, intersection_point)
+                closest_index = self.get_stop_index(ego_point, intersection_point)
                 dist_from_tl = ego_point.distance(intersection_point)
                 traffic_light_state = self._traffic_lights['states'][key]
 
@@ -400,7 +400,7 @@ class BehaviouralPlanner:
 
             if vehicle.intersects(path_bb):
                 other_vehicle_point = Point(self._vehicle['position'][key][0], self._vehicle['position'][key][1])
-                _, closest_index = self.get_stop_index(ego_point, other_vehicle_point)
+                closest_index = self.get_stop_index(ego_point, other_vehicle_point)
                 dist_from_vehicle = ego_point.distance(other_vehicle_point)
 
                 vehicle_position = self._vehicle['position'][key]
