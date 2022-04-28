@@ -223,7 +223,7 @@ class StateInfo(threading.Thread):
         if self._show_on:
             if state_info != self._prev_state_text:
                 self._state_text['bg'] = 'green'
-                self._state_text.after(300, toggle_color)
+                self._state_text.after(750, toggle_color)
                 self._prev_state_text = state_info
             self._state_text.delete('1.0', tk.END)
             self._state_text.insert(tk.END, state_info)
