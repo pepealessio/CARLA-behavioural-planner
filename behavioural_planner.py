@@ -614,7 +614,7 @@ class BehaviouralPlanner:
 
         # -------------- TRAFFIC LIGHTS --------------------------
         # Check for traffic lights presence
-        traffic_light_presence, traffic_lights = self.check_for_traffic_lights(waypoints, ego_point, goal_path)
+        traffic_light_presence, traffic_lights = self.check_for_traffic_lights(ego_point, goal_path)
         
         # Draw all the traffic lights
         for i, tl in enumerate([tl[3] for tl in traffic_lights]):
@@ -627,7 +627,7 @@ class BehaviouralPlanner:
         
         # --------------- VEHICLES --------------------------------
         # Check for vehicle presence
-        vehicle_presence, vehicles, veh_chech_area = self.check_for_vehicle(waypoints, ego_point, goal_path)
+        vehicle_presence, vehicles, veh_chech_area = self.check_for_vehicle(ego_point, goal_path)
 
         # Draw all the found vehicle
         for i, v in enumerate([v[4] for v in vehicles]):
@@ -642,7 +642,7 @@ class BehaviouralPlanner:
 
         # --------------- PEDESTRIANS ------------------------------
         # Check for pedestrian presence
-        pedestrian_presence, pedestrians, ped_chech_area = self.check_for_pedestrians(waypoints, ego_point, goal_path)
+        pedestrian_presence, pedestrians, ped_chech_area = self.check_for_pedestrians(ego_point, goal_path)
         # Draw all the found pedestrian
         for i, p in enumerate(pedestrians):
             self._draw(p[4], angle=ego_direction, short='--', settings=dict(color='#fc2626', label=f'Pedestrian {i}'))
@@ -770,17 +770,10 @@ class BehaviouralPlanner:
 
         return goal_index % len(waypoints), is_ego_itm, arc
 
-    def check_for_traffic_lights(self, waypoints, ego_point, goal_path):
+    def check_for_traffic_lights(self, ego_point, goal_path):
         """Check in the path for presence of vehicle.
 
         Args:
-            waypoints: current waypoints to track. (global frame)
-            length and speed in m and m/s.
-            (includes speed to track at each x,y location.)
-            format: [[x0, y0, v0],
-                     [x1, y1, v1],
-                     ...
-                     [xn, yn, vn]]
             ego_point (Point): The point represent the position of the vehicle.
             goal_path (LineString): The linestring represent the path until the goal.
 
@@ -802,7 +795,7 @@ class BehaviouralPlanner:
             if intersection_flag:
                 intersection_point = Point(goal_path.intersection(tl_line).coords)
 
-                _, closest_index = get_closest_index(waypoints, intersection_point)
+                _, closest_index = self.get_stop_index(ego_point, intersection_point)
                 dist_from_tl = ego_point.distance(intersection_point)
                 traffic_light_state = self._traffic_lights['states'][key]
 
@@ -813,17 +806,10 @@ class BehaviouralPlanner:
 
         return intersection_flag, intersection
 
-    def check_for_vehicle(self, waypoints, ego_point, goal_path):
+    def check_for_vehicle(self,ego_point, goal_path):
         """Check in the path for presence of vehicle.
 
         Args:
-            waypoints: current waypoints to track. (global frame)
-            length and speed in m and m/s.
-            (includes speed to track at each x,y location.)
-            format: [[x0, y0, v0],
-                     [x1, y1, v1],
-                     ...
-                     [xn, yn, vn]]
             ego_point (Point): The point represent the position of the vehicle.
             goal_path (LineString): The linestring represent the path until the goal.
 
@@ -849,7 +835,7 @@ class BehaviouralPlanner:
 
             if vehicle.intersects(path_bb):
                 other_vehicle_point = Point(self._vehicle['position'][key][0], self._vehicle['position'][key][1])
-                _, closest_index = get_closest_index(waypoints, other_vehicle_point)
+                _, closest_index = self.get_stop_index(ego_point, other_vehicle_point)
                 dist_from_vehicle = ego_point.distance(other_vehicle_point)
 
                 vehicle_position = self._vehicle['position'][key]
@@ -865,17 +851,10 @@ class BehaviouralPlanner:
 
         return intersection_flag, intersection, path_bb
 
-    def check_for_pedestrians(self, waypoints, ego_point, goal_path):
+    def check_for_pedestrians(self,ego_point, goal_path):
         """Check in the path for presence of pedestrians.
 
         Args:
-            waypoints: current waypoints to track. (global frame)
-            length and speed in m and m/s.
-            (includes speed to track at each x,y location.)
-            format: [[x0, y0, v0],
-                     [x1, y1, v1],
-                     ...
-                     [xn, yn, vn]]
             ego_point (Point): The point represent the position of the vehicle.
             goal_path (LineString): The linestring represent the path until the goal.
 
