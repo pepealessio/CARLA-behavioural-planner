@@ -231,9 +231,9 @@ class BehaviouralPlanner:
                 f'Position={tuple((round(x, 1) for x in p[1][:2]))}, Speed={round(p[2], 2)} m/s, Distance={round(p[3], 2)} m'
 
         # --------------- Update presence of obstacles -------------
-        # self._before_pedestrian_present = pedestrian_presence
-        # self._before_vehicle_present = vehicle_presence
-        # self._before_tl_present = traffic_light_presence
+        self._before_pedestrian_present = pedestrian_presence
+        self._before_vehicle_present = vehicle_presence
+        self._before_tl_present = traffic_light_presence
 
         # --------------- Update current input draw ----------------
         self._finalize_draw()
@@ -305,7 +305,7 @@ class BehaviouralPlanner:
         if self._before_tl_present or self._before_vehicle_present or self._before_pedestrian_present:
             lookahead += 15  # m of margin
         
-        if check_is_after(self._waypoints, ego_point, closest_index, margin=1):
+        if check_is_after(self._waypoints, ego_point, closest_index, margin=0.5):
             wp_index = closest_index + 1
         else:
             wp_index = closest_index
@@ -360,7 +360,7 @@ class BehaviouralPlanner:
             if intersection_flag:
                 intersection_point = Point(goal_path.intersection(tl_line).coords)
 
-                closest_index = self.get_stop_index(ego_point, intersection_point)
+                _, closest_index = get_closest_index(self._waypoints, intersection_point)
                 dist_from_tl = ego_point.distance(intersection_point)
                 traffic_light_state = self._traffic_lights['states'][key]
 
@@ -400,7 +400,7 @@ class BehaviouralPlanner:
 
             if vehicle.intersects(path_bb):
                 other_vehicle_point = Point(self._vehicle['position'][key][0], self._vehicle['position'][key][1])
-                closest_index = self.get_stop_index(ego_point, other_vehicle_point)
+                _, closest_index = get_closest_index(self._waypoints, other_vehicle_point)
                 dist_from_vehicle = ego_point.distance(other_vehicle_point)
 
                 vehicle_position = self._vehicle['position'][key]
