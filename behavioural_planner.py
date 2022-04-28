@@ -305,7 +305,8 @@ class BehaviouralPlanner:
         if self._before_tl_present or self._before_vehicle_present or self._before_pedestrian_present:
             lookahead += 15  # m of margin
         
-        if check_is_after(self._waypoints, ego_point, closest_index, margin=0.5):
+        is_after, _ = check_is_after(self._waypoints, ego_point, closest_index, margin=0.1)
+        if (closest_index != len(waypoints)-1) and is_after:
             wp_index = closest_index + 1
         else:
             wp_index = closest_index
@@ -320,7 +321,7 @@ class BehaviouralPlanner:
         else:
             arc_length = 0
             wp_i1 = ego_point
-            while wp_index < len(waypoints) - 1:
+            while wp_index <= len(waypoints) - 1:
                 wp_i2 = Point(waypoints[wp_index][0], waypoints[wp_index][1])
                 arc_points.append(wp_i2)
                 arc_length += wp_i1.distance(wp_i2)

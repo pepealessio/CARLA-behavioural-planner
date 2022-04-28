@@ -16,7 +16,7 @@ STOP_THRESHOLD = 0.1
 TRAFFICLIGHT_GREEN = 0
 TRAFFICLIGHT_YELLOW = 1
 TRAFFICLIGHT_RED = 2
-TRAFFICLIGHT_YELLOW_MIN_TIME = 3.5  # sec
+TRAFFICLIGHT_YELLOW_MIN_TIME = 2.5  # sec
 
 
 """In this file we implemented an FSM for the behavioural planner."""
