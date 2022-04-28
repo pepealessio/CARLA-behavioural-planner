@@ -10,24 +10,20 @@ import argparse
 import logging
 import time
 import math
-from matplotlib import markers
-import numpy as np
-import csv
-import matplotlib.pyplot as plt
 from numpy.core.defchararray import index
 import controller2d
 import configparser 
 import local_planner
 import behavioural_planner
+import behaviourial_fsm
 import cv2
-import json 
 from math import sin, cos, pi, tan, sqrt
 from munch import DefaultMunch
+import numpy as np
 import tkinter as tk
 import threading
+from shapely.geometry import Point
 from tqdm import tqdm
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.figure import Figure
 
 # Script level imports
 sys.path.append(os.path.abspath(sys.path[0] + '/..'))
@@ -168,7 +164,7 @@ class StateInfo(threading.Thread):
             # Build the window
             self._root = tk.Tk()
             self._root.protocol("WM_DELETE_WINDOW", self._callback)
-            self._root.geometry("600x350")
+            self._root.geometry("640x350")
             self._root.title("FSM info")
             self._root.configure(background='white')
 
@@ -185,6 +181,7 @@ class StateInfo(threading.Thread):
 
             tk.Label(self._root, text='Behavioural Planner State:', font=("Microsoft YaHei UI", 16), bg='white', anchor="w").grid(row=2, column=0, sticky='nswe')
 
+            self._prev_state_text = 'loading ...'
             self._state_text = tk.Text(self._root, width=15, height=0, font=("Microsoft YaHei UI Light", 11))
             self._state_text.bind("<Key>", lambda e: "break")
             self._state_text['bg'] = 'white'
@@ -219,8 +216,15 @@ class StateInfo(threading.Thread):
 
     def set_state_info(self, info):
         """Update the state info box."""
+        def toggle_color():
+            self._state_text['bg'] = 'white'
+        
         state_info, input_info = info
         if self._show_on:
+            if state_info != self._prev_state_text:
+                self._state_text['bg'] = 'green'
+                self._state_text.after(750, toggle_color)
+                self._prev_state_text = state_info
             self._state_text.delete('1.0', tk.END)
             self._state_text.insert(tk.END, state_info)
 
@@ -231,6 +235,35 @@ class StateInfo(threading.Thread):
         """Destroy the window"""
         if self._show_on:
             self._root.destroy()
+
+def fix_waypoints(waypoints):
+    """Sometimes the points go back and forth in the same positions (usually in the 
+    curves), making the analysis on them complicated. This feature removes these excess points.
+    
+    Args:
+        waypoints(np.array[float, float, float]): the waypoint list. The elements represent x, y and the
+        desidered speed.
+        
+    Return:
+        waypoints(np.array[float, float, float]): the fixed waypoints.
+    """
+    fixed_wp = []
+    waypoints = waypoints.tolist()
+    to_remove = [False] * len(waypoints)
+    old_theta = None
+
+    for i in range(0, len(waypoints)-1):
+        theta = np.arctan2(-(waypoints[i][1] - waypoints[i+1][1]), (waypoints[i][0] - waypoints[i+1][0]))
+        if (old_theta != None) and (np.abs(theta - old_theta) > 2.35):
+            to_remove[i] = True
+        old_theta = theta
+
+    for i in range(len(to_remove)):
+        if to_remove[i] and not to_remove[i-1]:
+            continue
+        fixed_wp.append(waypoints[i])
+
+    return np.array(fixed_wp)
 
 def rotate_x(angle):
     R = np.mat([[ 1,         0,           0],
@@ -737,6 +770,12 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
 
             waypoints = np.array(waypoints)
 
+            # ------------ Fix strange waypoints ---------------------
+            print(waypoints)
+            waypoints = fix_waypoints(waypoints)
+            print('fixed')
+            print(waypoints)
+
             #######################################################################
             # -------------- Get initial traffic lights state ---------------------
             #######################################################################
@@ -804,6 +843,7 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
             # This is where we take the controller2d.py class
             # and apply it to the simulator
             controller = controller2d.Controller2D(waypoints)
+            
 
             #############################################
             # Vehicle Trajectory Live Plotting Setup
@@ -1086,6 +1126,12 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                     # Perform a state transition in the behavioural planner.
                     bp.transition_state(waypoints, ego_state, current_speed)
 
+                    # update waypoint
+                    waypoints = bp.get_waypoints()
+
+                    # update controller
+                    controller.update_waypoints(waypoint)
+
                     # Compute the goal state set from the behavioural planner's computed goal state.
                     goal_state_set = lp.get_goal_state_set(bp._goal_index, bp._goal_state, waypoints, ego_state)
 
@@ -1110,7 +1156,7 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                     if best_path is not None:
                         # Compute the velocity profile for the path, and compute the waypoints.
                         desired_speed = bp._goal_state[2]
-                        decelerate_to_stop = bp._state == behavioural_planner.DECELERATE_TO_STOP
+                        decelerate_to_stop = bp._state == behaviourial_fsm.DECELERATE_TO_STOP
                         local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_stop, bp._lead_car_state, bp._follow_lead_vehicle)
 
                         if local_waypoints != None:
@@ -1353,10 +1399,10 @@ def main():
 
     # Logging startup info
     log_level = logging.DEBUG if args.debug else logging.INFO
-    log_dir = f'./log/main_{datetime.now():%Y-%m-%d-%H-%M-%S}.log'
+    log_dir = f'./log/main_{datetime.now():%Y-%m-%d}.log'
     # Create log file if not exists
     os.makedirs(os.path.dirname(log_dir), exist_ok=True)
-    with open(log_dir, "w") as f:
+    with open(log_dir, "a") as f:
         f.write("")
     # set log config
     logging.basicConfig(format='%(asctime)s, %(levelname)s: %(message)s', datefmt='%d/%m/%Y %I:%M:%S %p', filename=log_dir, level=log_level)
