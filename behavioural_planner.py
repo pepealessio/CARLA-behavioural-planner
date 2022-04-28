@@ -180,7 +180,7 @@ class BehaviouralPlanner:
         closest_len, closest_index = get_closest_index(waypoints, ego_point)
 
         # Get goal based on the current lookahead
-        goal_index, is_close_itc, goal_path = self.get_goal_index(waypoints, ego_point, ego_direction, closest_len, closest_index)
+        goal_index, goal_path = self.get_goal_index(waypoints, ego_point, ego_direction, closest_len, closest_index)
         self._draw(goal_path, angle=ego_direction, short='y^-', settings=dict(markersize=10, label='Goal Path'))
 
         # Skip no moving goal to not remain stuck
@@ -297,24 +297,15 @@ class BehaviouralPlanner:
             is_ego_in_the_middle (bool): If the vehicle is after the closest index
             goal_line (LineString): a linestring representing the ideal path
         """
-        # check if ego state is in the middle of wp_i and wp_i+1 with 10^-2 meters precision
-        closest_point = Point(waypoints[closest_index][0], waypoints[closest_index][1])
-        dist_ego2close = ego_point.distance(closest_point)
-
-        ego_plus_cdist = Point(ego_point.x + closest_len * np.cos(ego_direction), ego_point.y + closest_len * np.sin(ego_direction))
-        dist_close2egop = closest_point.distance(ego_plus_cdist)
-
-        is_ego_itm = dist_close2egop > dist_ego2close - 1  # 1 m was the margin
+        # list with all the points into the path
+        arc_points = [ego_point]
 
         # Update lookahead if before something was present
         lookahead = self._lookahead
         if self._before_tl_present or self._before_vehicle_present or self._before_pedestrian_present:
             lookahead += 15  # m of margin
-
-        # compute a list with all the points into the path
-        arc_points = [ego_point]
-
-        if is_ego_itm and not (closest_index == len(waypoints) - 1):  # if closest point is before the ego skip that point, it's not useful
+        
+        if check_is_after(self._waypoints, ego_point, closest_index, margin=1):
             wp_index = closest_index + 1
         else:
             wp_index = closest_index
@@ -342,7 +333,7 @@ class BehaviouralPlanner:
         # draw the arc_line
         arc = LineString(arc_points)
 
-        return goal_index % len(waypoints), is_ego_itm, arc
+        return goal_index % len(waypoints), arc
 
     def check_for_traffic_lights(self, ego_point, goal_path):
         """Check in the path for presence of vehicle.
@@ -537,24 +528,24 @@ def get_closest_index(waypoints, point):
     return closest_len, closest_index
 
 
-def check_is_after(waypoint,point,wp_index):
+def check_is_after(waypoint,point, wp_index, margin=0):
     wp = Point(waypoint[wp_index][0:2])
    
     if wp_index==0:
-        return False, wp
+        return True, wp
     
     prev_wp = Point(waypoint[wp_index-1][0:2])
     
     segment = LineString([prev_wp, wp])
     proj_point = project_on_linestring(point, segment)
-    dist_wp_prev = wp.distance(prev_wp)
+    dist_wp_prev = wp.distance(prev_wp) - margin
     dist_prev_proj = prev_wp.distance(proj_point)
 
     return (dist_wp_prev <= dist_prev_proj), proj_point
 
 
-def check_is_before(waypoint,point,wp_index):
-    is_before, proj_point = check_is_after(waypoint,point,wp_index)
+def check_is_before(waypoint, point, wp_index, margin=0):
+    is_before, proj_point = check_is_after(waypoint, point, wp_index, margin)
     return not is_before, proj_point
 
 
