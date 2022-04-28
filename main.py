@@ -15,6 +15,7 @@ import controller2d
 import configparser 
 import local_planner
 import behavioural_planner
+import behaviourial_fsm
 import cv2
 from math import sin, cos, pi, tan, sqrt
 from munch import DefaultMunch
@@ -1155,7 +1156,7 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                     if best_path is not None:
                         # Compute the velocity profile for the path, and compute the waypoints.
                         desired_speed = bp._goal_state[2]
-                        decelerate_to_stop = bp._state == behavioural_planner.DECELERATE_TO_STOP
+                        decelerate_to_stop = bp._state == behaviourial_fsm.DECELERATE_TO_STOP
                         local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_stop, bp._lead_car_state, bp._follow_lead_vehicle)
 
                         if local_waypoints != None:
