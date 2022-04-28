@@ -26,7 +26,7 @@ def get_fsm():
     def fl_fl_1(d):
         if d['traffic_light_presence']:
             traffic_light = d['traffic_lights'][0]
-            can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            can_pass = (d['closed_loop_speed'] != 0) and (traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME)
         t1 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and (not d['traffic_light_presence'])
         t2 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
         t3 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and can_pass
@@ -35,7 +35,7 @@ def get_fsm():
     def fl_fl_2(d):
         if d['traffic_light_presence']:
             traffic_light = d['traffic_lights'][0]
-            can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            can_pass = (d['closed_loop_speed'] != 0) and (traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME)
         t1 = (not d['pedestrian_presence']) and d['vehicle_presence'] and (not d['traffic_light_presence'])
         t2 = (not d['pedestrian_presence']) and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
         t3 = (not d['pedestrian_presence']) and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and can_pass
@@ -44,7 +44,7 @@ def get_fsm():
     def fl_dts_1(d):
         if d['traffic_light_presence']:
             traffic_light = d['traffic_lights'][0]
-            can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            can_pass = (d['closed_loop_speed'] != 0) and (traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME)
         t1 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and not can_pass
         t2 = (not d['pedestrian_presence']) and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED)
         return t1 or t2
@@ -52,7 +52,7 @@ def get_fsm():
     def fl_dts_2(d):
         if d['traffic_light_presence']:
             traffic_light = d['traffic_lights'][0]
-            can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            can_pass = (d['closed_loop_speed'] != 0) and (traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME)
         t1 = (not d['pedestrian_presence']) and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and not can_pass
         t2 = (not d['pedestrian_presence']) and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED)
         return t1 or t2
@@ -60,7 +60,7 @@ def get_fsm():
     def fl_dts_3(d):
         if d['traffic_light_presence']:
             traffic_light = d['traffic_lights'][0]
-            can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            can_pass = (d['closed_loop_speed'] != 0) and (traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME)
         t1 = d['pedestrian_presence'] and (not d['vehicle_presence']) and (not d['traffic_light_presence'])
         t2 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
         t3 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and can_pass
@@ -69,7 +69,7 @@ def get_fsm():
     def fl_dts_4(d):
         if d['traffic_light_presence']:
             traffic_light = d['traffic_lights'][0]
-            can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            can_pass = (d['closed_loop_speed'] != 0) and (traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME)
         t1 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and not can_pass
         t2 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED)
         return t1 or t2
@@ -77,7 +77,7 @@ def get_fsm():
     def fl_dts_5(d):
         if d['traffic_light_presence']:
             traffic_light = d['traffic_lights'][0]
-            can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            can_pass = (d['closed_loop_speed'] != 0) and (traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME)
         t1 = d['pedestrian_presence'] and d['vehicle_presence'] and (not d['traffic_light_presence'])
         t2 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
         t3 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and can_pass
@@ -86,7 +86,7 @@ def get_fsm():
     def fl_dts_6(d):
         if d['traffic_light_presence']:
             traffic_light = d['traffic_lights'][0]
-            can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            can_pass = (d['closed_loop_speed'] != 0) and (traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME)
         t1 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and not can_pass
         t2 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED)
         return t1 or t2
@@ -125,7 +125,7 @@ def get_fsm():
         stopped = d['closed_loop_speed'] < STOP_THRESHOLD
         if d['traffic_light_presence']:
             traffic_light = d['traffic_lights'][0]
-            can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            can_pass = (d['closed_loop_speed'] != 0) and (traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME)
         t1 = d['pedestrian_presence'] and (not d['vehicle_presence']) and (not d['traffic_light_presence']) and (not stopped)
         t2 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN) and (not stopped)
         t3 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and can_pass and (not stopped)
@@ -135,7 +135,7 @@ def get_fsm():
         stopped = d['closed_loop_speed'] < STOP_THRESHOLD
         if d['traffic_light_presence']:
             traffic_light = d['traffic_lights'][0]
-            can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            can_pass = (d['closed_loop_speed'] != 0) and (traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME)
         t1 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and (not can_pass) and (not stopped)
         t2 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED) and (not stopped)
         return t1 or t2
@@ -144,7 +144,7 @@ def get_fsm():
         stopped = d['closed_loop_speed'] < STOP_THRESHOLD
         if d['traffic_light_presence']:
             traffic_light = d['traffic_lights'][0]
-            can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            can_pass = (d['closed_loop_speed'] != 0) and (traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME)
         t1 = d['pedestrian_presence'] and d['vehicle_presence'] and (not d['traffic_light_presence']) and (not stopped)
         t2 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN) and (not stopped)
         t3 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and can_pass and (not stopped)
@@ -154,7 +154,7 @@ def get_fsm():
         stopped = d['closed_loop_speed'] < STOP_THRESHOLD
         if d['traffic_light_presence']:
             traffic_light = d['traffic_lights'][0]
-            can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            can_pass = (d['closed_loop_speed'] != 0) and (traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME)
         t1 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and (not can_pass) and (not stopped)
         t2 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED) and (not stopped)
         return t1 or t2
@@ -179,7 +179,7 @@ def get_fsm():
         stopped = d['closed_loop_speed'] < STOP_THRESHOLD
         if d['traffic_light_presence']:
             traffic_light = d['traffic_lights'][0]
-            can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            can_pass = (d['closed_loop_speed'] != 0) and (traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME)
         t1 = d['pedestrian_presence'] and (not d['vehicle_presence']) and (not d['traffic_light_presence']) and stopped
         t2 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN) and stopped
         t3 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and can_pass and stopped
@@ -189,7 +189,7 @@ def get_fsm():
         stopped = d['closed_loop_speed'] < STOP_THRESHOLD
         if d['traffic_light_presence']:
             traffic_light = d['traffic_lights'][0]
-            can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            can_pass = (d['closed_loop_speed'] != 0) and (traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME)
         t1 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and (not can_pass) and stopped
         t2 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED) and stopped
         return t1 or t2
@@ -198,7 +198,7 @@ def get_fsm():
         stopped = d['closed_loop_speed'] < STOP_THRESHOLD
         if d['traffic_light_presence']:
             traffic_light = d['traffic_lights'][0]
-            can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            can_pass = (d['closed_loop_speed'] != 0) and (traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME)
         t1 = d['pedestrian_presence'] and d['vehicle_presence'] and (not d['traffic_light_presence']) and stopped
         t2 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN) and stopped
         t3 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and can_pass and stopped
@@ -208,7 +208,7 @@ def get_fsm():
         stopped = d['closed_loop_speed'] < STOP_THRESHOLD
         if d['traffic_light_presence']:
             traffic_light = d['traffic_lights'][0]
-            can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            can_pass = (d['closed_loop_speed'] != 0) and (traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME)
         t1 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and (not can_pass) and stopped
         t2 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED) and stopped
         return t1 or t2
@@ -244,7 +244,7 @@ def get_fsm():
     def ss_ss_3(d):
         if d['traffic_light_presence']:
             traffic_light = d['traffic_lights'][0]
-            can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            can_pass = (d['closed_loop_speed'] != 0) and (traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME)
         t1 = d['pedestrian_presence'] and (not d['vehicle_presence']) and (not d['traffic_light_presence'])
         t2 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
         t3 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and can_pass
@@ -253,7 +253,7 @@ def get_fsm():
     def ss_ss_4(d):
         if d['traffic_light_presence']:
             traffic_light = d['traffic_lights'][0]
-            can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            can_pass = (d['closed_loop_speed'] != 0) and (traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME)
         t1 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and (not can_pass)
         t2 = d['pedestrian_presence'] and (not d['vehicle_presence']) and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED)
         return t1 or t2
@@ -261,7 +261,7 @@ def get_fsm():
     def ss_ss_5(d):
         if d['traffic_light_presence']:
             traffic_light = d['traffic_lights'][0]
-            can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            can_pass = (d['closed_loop_speed'] != 0) and (traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME)
         t1 = d['pedestrian_presence'] and d['vehicle_presence'] and (not d['traffic_light_presence'])
         t2 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_GREEN)
         t3 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and can_pass
@@ -270,7 +270,7 @@ def get_fsm():
     def ss_ss_6(d):
         if d['traffic_light_presence']:
             traffic_light = d['traffic_lights'][0]
-            can_pass = traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME
+            can_pass = (d['closed_loop_speed'] != 0) and (traffic_light[2] / d['closed_loop_speed'] < TRAFFICLIGHT_YELLOW_MIN_TIME)
         t1 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_YELLOW) and (not can_pass)
         t2 = d['pedestrian_presence'] and d['vehicle_presence'] and d['traffic_light_presence'] and (traffic_light[1] == TRAFFICLIGHT_RED)
         return t1 or t2
