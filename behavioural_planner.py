@@ -170,17 +170,19 @@ class BehaviouralPlanner:
         # Transform ego info in shapely geometry
         ego_point = Point(ego_state[0], ego_state[1])
         ego_direction = ego_state[2]
+
         # Draw the ego state point.
         self._draw(ego_point, angle=ego_direction, short='g.', settings=dict(markersize=35, label='Ego Point'))
+
         # Update input info about trafficlights
         self._current_input += f'\n - Ego state: Position={tuple((round(x, 1) for x in ego_point.coords[0]))}, Orientation={round(np.degrees(ego_direction))}°, Velocity={round(closed_loop_speed, 2)} m/s'
 
         # ---------------- GOAL INDEX ---------------------------
         # Get closest waypoint
-        closest_len, closest_index = get_closest_index(waypoints, ego_point)
+        _, closest_index = get_closest_index(waypoints, ego_point)
 
         # Get goal based on the current lookahead
-        goal_index, goal_path = self.get_goal_index(waypoints, ego_point, ego_direction, closest_len, closest_index)
+        goal_index, goal_path = self.get_goal_index(waypoints, ego_point, closest_index)
         self._draw(goal_path, angle=ego_direction, short='y^-', settings=dict(markersize=10, label='Goal Path'))
 
         # Skip no moving goal to not remain stuck
@@ -206,6 +208,7 @@ class BehaviouralPlanner:
         # Draw all the found vehicle
         for i, v in enumerate([v[4] for v in vehicles]):
             self._draw(v, angle=ego_direction, short='--', settings=dict(color='#ff4d4d', label=f'Vehicle {i}'))
+
         # Draw the vehicle check area
         self._draw(veh_chech_area, angle=ego_direction, short='b--', settings=dict(linewidth=2, label='Check vehicle area'))
 
@@ -217,15 +220,18 @@ class BehaviouralPlanner:
         # --------------- PEDESTRIANS ------------------------------
         # Check for pedestrian presence
         pedestrian_presence, pedestrians, ped_chech_area = self.check_for_pedestrians(ego_point, goal_path)
+
         # Draw all the found pedestrian
         for i, p in enumerate(pedestrians):
             self._draw(p[4], angle=ego_direction, short='--', settings=dict(color='#fc2626', label=f'Pedestrian {i}'))
+
         # Draw the pedestrian check area
         self._draw(ped_chech_area, angle=ego_direction, short='c:', settings=dict(label='Check pedestrian area'))
+
         if pedestrian_presence:
             self._draw(Point(self._waypoints[pedestrians[0][0]][0:2]), ego_direction, "r.", dict(markersize=20))
 
-        # Update input info about vehicles
+        # Update input info about pedestrians
         for i, p in enumerate([p for p in pedestrians]):
             self._current_input += f'\n - Pedestrian {i}: ' + \
                 f'Position={tuple((round(x, 1) for x in p[1][:2]))}, Speed={round(p[2], 2)} m/s, Distance={round(p[3], 2)} m'
@@ -265,7 +271,7 @@ class BehaviouralPlanner:
     # Gets the goal index in the list of waypoints, based on the lookahead and
     # the current ego state. In particular, find the earliest waypoint that has accumulated
     # arc length (including closest_len) that is greater than or equal to self._lookahead.
-    def get_goal_index(self, waypoints, ego_point, ego_direction, closest_len, closest_index):
+    def get_goal_index(self, waypoints, ego_point, closest_index):
         """Gets the goal index for the vehicle. 
         
         Set to be the earliest waypoint that has accumulated arc length
@@ -287,14 +293,11 @@ class BehaviouralPlanner:
                     waypoints[5]:
                     returns [x5, y5, v5] (6th waypoint)
             ego_point (Point): the point represent the position of the vehicle.
-            ego_direction (float): the angle who represent the direction of teh vehicle
-            closest_len: length (m) to the closest waypoint from the vehicle.
             closest_index: index of the waypoint which is closest to the vehicle.
                 i.e. waypoints[closest_index] gives the waypoint closest to the vehicle.
         returns:
             wp_index: Goal index for the vehicle to reach
                 i.e. waypoints[wp_index] gives the goal waypoint
-            is_ego_in_the_middle (bool): If the vehicle is after the closest index
             goal_line (LineString): a linestring representing the ideal path
         """
         # list with all the points into the path
@@ -305,7 +308,7 @@ class BehaviouralPlanner:
         if self._before_tl_present or self._before_vehicle_present or self._before_pedestrian_present:
             lookahead += 15  # m of margin
         
-        is_after, _ = check_is_after(self._waypoints, ego_point, closest_index, margin=0.1)
+        is_after, _ = check_is_after(self._waypoints, ego_point, closest_index, margin=2.5)
         if (closest_index != len(waypoints)-1) and is_after:
             wp_index = closest_index + 1
         else:
@@ -372,7 +375,7 @@ class BehaviouralPlanner:
 
         return intersection_flag, intersection
 
-    def check_for_vehicle(self,ego_point, goal_path):
+    def check_for_vehicle(self, ego_point, goal_path):
         """Check in the path for presence of vehicle.
 
         Args:
@@ -417,7 +420,7 @@ class BehaviouralPlanner:
 
         return intersection_flag, intersection, path_bb
 
-    def check_for_pedestrians(self,ego_point, goal_path):
+    def check_for_pedestrians(self, ego_point, goal_path):
         """Check in the path for presence of pedestrians.
 
         Args:
@@ -466,6 +469,17 @@ class BehaviouralPlanner:
     
     # NOTE: case obstacle_index = 0 is not defined 
     def get_stop_index(self, ego_point, obstacle_point, margin=1):
+        """
+        Find the stop index before an obstacle. If it doesn't exist add a waypoint to stop.
+        All cases are described in the figure # TODO
+
+        Args:
+            ego_point: the point of the vehicle
+            obstacle_point: the point of the obstacle
+
+        Returns:
+            stop_index: the index of the waypoint
+        """
         _, obstacle_index = get_closest_index(self._waypoints,obstacle_point)
         is_obstacle_before, obst_proj_point = check_is_before(self._waypoints, obstacle_point, obstacle_index)
 
@@ -530,6 +544,18 @@ def get_closest_index(waypoints, point):
 
 
 def check_is_after(waypoint,point, wp_index, margin=0):
+    """Check if a point is after a waypoint.
+
+    Args:
+        waypoint: the waypoint
+        point: the point to check
+        wp_index: the waypoint index
+
+    Returns:
+        is_after: boolean which is true if the point is after
+        proj_point: the projected point used to make the check 
+    
+    """
     wp = Point(waypoint[wp_index][0:2])
    
     if wp_index==0:
@@ -546,18 +572,36 @@ def check_is_after(waypoint,point, wp_index, margin=0):
 
 
 def check_is_before(waypoint, point, wp_index, margin=0):
+    """Check if a point is before a waypoint.
+
+    Args:
+        waypoint: the waypoint
+        point: the point to check
+        wp_index: the waypoint index
+
+    Returns:
+        is_before: boolean which is true if the point is before
+        proj_point: the projected point used to make the check 
+    
+    """
     is_before, proj_point = check_is_after(waypoint, point, wp_index, margin)
     return not is_before, proj_point
 
 
 def project_on_linestring(point, linestring):
-    """Project point on a linestring.
+    """Project point on the line identified by the linestring.
     
     .. math::
         cos(alpha) = (v - u).(x - u) / (|x - u|*|v - u|)
         d = cos(alpha)*|x - u| = (v - u).(x - u) / |v - u|
         P(x) = u + d*(v - u)/|v - u|
+
+    Args:
+        point: the point to project
+        linestring: the linestring 
     
+    Return:
+        p: the projected point
     """
     x = np.array(point.coords[0])
 
@@ -570,5 +614,3 @@ def project_on_linestring(point, linestring):
     p = u + n*np.dot(x - u, n)
 
     return Point(p)
-
-
