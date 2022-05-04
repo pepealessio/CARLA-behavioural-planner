@@ -1052,7 +1052,7 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                 ###########################################################
                 # --------------- Read pedestrian info ----------------
                 ###########################################################
-                pedestrian_info=dict(position=[], fences=[], speeds=[])
+                pedestrian_info=dict(position=[], fences=[], speeds=[], orientations=[])
                 for agent in measurement_data.non_player_agents:
                     if agent.HasField('pedestrian'):
                         # Get position
@@ -1066,7 +1066,8 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                         pedestrian_info['fences'].append(bb)
                         
                         # Get forward speed
-                        pedestrian_info['speeds'].append(agent.pedestrian.forward_speed) 
+                        pedestrian_info['speeds'].append(agent.pedestrian.forward_speed)
+                        pedestrian_info['orientations'].append(np.radians(agent.pedestrian.transform.rotation.yaw)) 
                 bp.set_pedestrians(pedestrian_info)
                     
 

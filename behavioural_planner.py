@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import numpy as np
 from shapely.geometry import Point, LineString, Polygon, CAP_STYLE
-from shapely.affinity import rotate
+from shapely.affinity import rotate, translate
 from shapely.ops import unary_union
 import matplotlib.pyplot as plt
 import behaviourial_fsm
@@ -9,8 +9,10 @@ import behaviourial_fsm
 
 # Define x dimension of the bounding box to check for obstacles.
 BB_PATH = 1.5  # m
-BB_PEDESTRIAN_LEFT = 4 # m
+BB_PEDESTRIAN_LEFT = 1.5 # m
 BB_PEDESTRIAN_RIGHT = 1.5 # m
+BB_EXT_PEDESTRIAN_LEFT = 5  # m
+BB_EXT_PEDESTRIAN_RIGHT = 2.5  # m
 
 
 class BehaviouralPlanner:
@@ -219,7 +221,7 @@ class BehaviouralPlanner:
 
         # --------------- PEDESTRIANS ------------------------------
         # Check for pedestrian presence
-        pedestrian_presence, pedestrians, ped_chech_area = self.check_for_pedestrians(ego_point, goal_path)
+        pedestrian_presence, pedestrians, ped_chech_area, ped_extended_area = self.check_for_pedestrians(ego_point, closed_loop_speed, goal_path, ego_direction)
 
         # Draw all the found pedestrian
         for i, p in enumerate(pedestrians):
@@ -227,6 +229,7 @@ class BehaviouralPlanner:
 
         # Draw the pedestrian check area
         self._draw(ped_chech_area, angle=ego_direction, short='c:', settings=dict(label='Check pedestrian area'))
+        self._draw(ped_extended_area, angle=ego_direction, short='k:', settings=dict(label='Extended check pedestrian'))
 
         if pedestrian_presence:
             self._draw(Point(self._waypoints[pedestrians[0][0]][0:2]), ego_direction, "r.", dict(markersize=20))
@@ -420,7 +423,97 @@ class BehaviouralPlanner:
 
         return intersection_flag, intersection, path_bb
 
-    def check_for_pedestrians(self, ego_point, goal_path):
+    def check_for_pedestrians(self, ego_point, ego_speed, goal_path, ego_direction):
+        """Check in the path for presence of pedestrians.
+
+        Args:
+            ego_point (Point): The point represent the position of the vehicle.
+            ego_speed (float): The ego closed loop speed.
+            goal_path (LineString): The linestring represent the path until the goal.
+
+        Returns:
+            [intersection_flag, intersection, path_bb]:
+                intersection_flag (bool): If true, at least one pedestrian is present.
+                intersection (List[Tuple[int, Point, float, float, Polygon]]): a list containing, for each pedestrian, the closest index,
+                    the position point, the speed, the distance from the pedestrian, and the bounding box of the pedestrian.
+                path_bb (Polygon): the check area.
+        """
+        # Default return parameter
+        intersection_flag = False
+        pedestrian_position = None
+        pedestrian_speed = 0
+
+        # Starting from the goal line, create an area to check for vehicle. The area, in this case,
+        # was created as teh union of a little area on the right and a laregr area (to check pedestrian crossing).
+        # NOTE: The sign are inverted respect to the shapely documentation because shapely use a reverse x choords.
+        extended_path_bb = unary_union([goal_path.buffer(BB_PEDESTRIAN_RIGHT+BB_EXT_PEDESTRIAN_RIGHT, single_sided=True), goal_path.buffer(-(BB_PEDESTRIAN_LEFT+BB_EXT_PEDESTRIAN_LEFT), single_sided=True)])
+        path_bb = unary_union([goal_path.buffer(BB_PEDESTRIAN_RIGHT, single_sided=True), goal_path.buffer(-BB_PEDESTRIAN_LEFT, single_sided=True)])
+
+        # Check all pedestrians whose bounding box intersects the control area
+        intersection = []
+        for key, pedestrian_bb in enumerate(self._pedestrians['fences']):
+            pedestrian = Polygon(pedestrian_bb)
+
+            if pedestrian.intersects(extended_path_bb):
+                pedestrian_point = Point(self._pedestrians['position'][key][0], self._pedestrians['position'][key][1])
+                pedestrian_speed = self._pedestrians['speeds'][key]
+                
+                # Check if the pedestrian is in the middle of the road
+                pedestrian_in_road = pedestrian.intersects(path_bb)
+                
+                # If the pedestrian is not in the road, chech if a pedestrian on the sidewalk is directed in the road.
+                if not pedestrian_in_road:
+                    # Compute a segment who represent the direction of the pedestrian
+                    pedestrian_orientation = self._pedestrians['orientations'][key]
+                    pedestrian_proj = Point(pedestrian_point.x + 8 * np.cos(pedestrian_orientation), 
+                                            pedestrian_point.y + 8 * np.sin(pedestrian_orientation))
+                    pedestrian_path = LineString([pedestrian_point, pedestrian_proj])
+                    self._draw(pedestrian_path, ego_direction, 'm^:')
+
+                    # Check if the pedestrian path intersect the vehicle path
+                    path_intersection = pedestrian_path.intersection(goal_path)
+
+                    if len(path_intersection.coords) > 0:
+                        # Compute in how time the car reach the path intersection (x2)
+                        dist_from_intersection = ego_point.distance(Point(*path_intersection.coords[0]))
+                        if ego_speed < 0.2:
+                            time_to_dist = 4  # s
+                        else:
+                            time_to_dist = (dist_from_intersection / ego_speed) * 2
+
+                        # Project the pedestrian on his path, at 0.5 second step, and check if the pedestrian is coming in the road,
+                        # basing on it's velocity
+                        ctime = 0
+                        while ctime < time_to_dist:
+                            pedestrian_distance = pedestrian_speed * ctime
+                            pedestrian_proj = translate(pedestrian, pedestrian_distance * np.cos(pedestrian_orientation), 
+                                                        pedestrian_distance * np.sin(pedestrian_orientation), 0)
+                            self._draw(pedestrian_proj, ego_direction, 'm')
+
+                            if pedestrian_proj.intersects(path_bb):
+                                pedestrian_in_road = True
+                                break
+                            ctime += 0.5
+
+                # Get pedestrians info if one of the two cases.
+                if pedestrian_in_road:
+                    closest_index = self.get_stop_index(ego_point, pedestrian_point)
+                    dist_from_pedestrian = ego_point.distance(pedestrian_point)
+
+                    pedestrian_position = self._pedestrians['position'][key]
+                    pedestrian_speed = self._pedestrians['speeds'][key]
+
+                    intersection.append([closest_index, pedestrian_position, pedestrian_speed, dist_from_pedestrian, pedestrian])
+
+        # A pedestrian can be said to be present if there is at least one vehicle in the area.
+        intersection_flag = len(intersection) > 0
+
+        # Sort the vehicle by their distance from ego
+        intersection = sorted(intersection, key=lambda x: x[3])
+
+        return intersection_flag, intersection, path_bb, extended_path_bb
+
+    def _check_for_pedestrians(self, ego_point, goal_path):
         """Check in the path for presence of pedestrians.
 
         Args:
