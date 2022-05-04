@@ -24,6 +24,7 @@ class BehaviouralPlanner:
         self._lookahead                     = lookahead
         self._follow_lead_vehicle_lookahead = lead_vehicle_lookahead
         self._state                         = self._fsm.get_current_state()
+        self._obstacles                     = []
         self._lead_car_state                = None
         self._follow_lead_vehicle           = False
         self._obstacle_on_lane              = False
@@ -102,6 +103,9 @@ class BehaviouralPlanner:
     def get_waypoints(self):
         return self._waypoints
 
+    def get_obstacles(self):
+        return self._obstacles
+
     def set_traffic_light(self, traffic_lights):
         """Update the traffic light information. These are coming from Carla."""
         for k in traffic_lights:
@@ -164,6 +168,7 @@ class BehaviouralPlanner:
             STOP_COUNTS     : Number of cycles (simulation iterations) 
                               before moving from stop sign.
         """
+        self._obstacles.clear()
         self._waypoints = waypoints
 
         # Update state info
@@ -379,7 +384,7 @@ class BehaviouralPlanner:
 
         return intersection_flag, intersection
 
-    def check_for_vehicle(self, ego_point, goal_path, check_left=False):
+    def check_for_vehicle(self, ego_point, goal_path):
         """Check in the path for presence of vehicle.
 
         Args:

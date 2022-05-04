@@ -1070,8 +1070,7 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                         pedestrian_info['speeds'].append(agent.pedestrian.forward_speed)
                         pedestrian_info['orientations'].append(np.radians(agent.pedestrian.transform.rotation.yaw)) 
                 bp.set_pedestrians(pedestrian_info)
-                    
-
+                
                 # UPDATE HERE the obstacles list
                 obstacles = []
 
@@ -1134,6 +1133,9 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                     # update controller
                     controller.update_waypoints(waypoint)
 
+                    # Update Obstacles
+                    obstacles = bp.get_obstacles()
+
                     # Compute the goal state set from the behavioural planner's computed goal state.
                     goal_state_set = lp.get_goal_state_set(bp._goal_index, bp._goal_state, waypoints, ego_state)
 
@@ -1144,7 +1146,7 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                     paths = local_planner.transform_paths(paths, ego_state)
 
                     # Perform collision checking.
-                    collision_check_array = lp._collision_checker.collision_check(paths, [])
+                    collision_check_array = lp._collision_checker.collision_check(paths, obstacles)
 
                     # Compute the best local path.
                     best_index = lp._collision_checker.select_best_path_index(paths, collision_check_array, bp._goal_state)
@@ -1225,14 +1227,15 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                     trajectory_fig.roll("trajectory", current_x, current_y) 
                     trajectory_fig.roll("car", current_x, current_y) 
                     
-                    # Load parked car points
-                    if len(obstacles) > 0:
-                        x = obstacles[:,:,0]
-                        y = obstacles[:,:,1]
-                        x = np.reshape(x, x.shape[0] * x.shape[1])
-                        y = np.reshape(y, y.shape[0] * y.shape[1])
+                    # # Load parked car points
+                    # obstacles_np = np.array(obstacles)
+                    # if obstacles_np.shape[0] > 0:
+                    #     x = obstacles_np[:,:,0]
+                    #     y = obstacles_np[:,:,1]
+                    #     x = np.reshape(x, x.shape[0] * x.shape[1])
+                    #     y = np.reshape(y, y.shape[0] * y.shape[1])
 
-                        trajectory_fig.roll("obstacles_points", x, y)
+                    #     trajectory_fig.roll("obstacles_points", x, y)
 
                     
                     forward_speed_fig.roll("forward_speed", 
