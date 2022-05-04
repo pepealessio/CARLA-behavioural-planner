@@ -52,7 +52,7 @@ class BehaviouralPlanner:
         self._renderer = self._fig.canvas.renderer
         self._legend = None
 
-    def _draw(self, geometry, angle=0, short='-', settings={}):
+    def _draw(self, geometry, short='-', **kargs):
         """Draw a geometry object in the figure spawned by the behavioural planner.
 
         Note:
@@ -65,15 +65,15 @@ class BehaviouralPlanner:
             angle (float, default=0): the angle, in radians, which represents the direction of 
             the vehicle, to obtain a representation of the geometries always in the viewing direction.
             short (str, default='-'): the first matplotlib argument to define a style.
-            settings (dict, default={}): The matplotlib settings to associate at that geometry. 
+            **kargs: The matplotlib settings to associate at that geometry. 
         """
-        geometry = rotate(geometry, (-angle + np.pi/2), (0,0), use_radians=True)
+        geometry = rotate(geometry, (-self._ego_orientation + np.pi/2), (0,0), use_radians=True)
         if type(geometry) == Point:
-            self._ax.plot(*geometry.coords.xy, short, **settings)
+            self._ax.plot(*geometry.coords.xy, short, **kargs)
         elif type(geometry) == LineString:
-            self._ax.plot(*geometry.coords.xy, short, **settings)
+            self._ax.plot(*geometry.coords.xy, short, **kargs)
         elif type(geometry) == Polygon:
-            self._ax.plot(*geometry.exterior.xy, short, **settings)
+            self._ax.plot(*geometry.exterior.xy, short, **kargs)
 
     def _finalize_draw(self):
         """This method shows everything passed to the _draw method in the figure.
@@ -172,9 +172,10 @@ class BehaviouralPlanner:
         # Transform ego info in shapely geometry
         ego_point = Point(ego_state[0], ego_state[1])
         ego_direction = ego_state[2]
+        self._ego_orientation = ego_direction
 
         # Draw the ego state point.
-        self._draw(ego_point, angle=ego_direction, short='g.', settings=dict(markersize=35, label='Ego Point'))
+        self._draw(ego_point, 'g.', markersize=35, label='Ego Point')
 
         # Update input info about trafficlights
         self._current_input += f'\n - Ego state: Position={tuple((round(x, 1) for x in ego_point.coords[0]))}, Orientation={round(np.degrees(ego_direction))}°, Velocity={round(closed_loop_speed, 2)} m/s'
@@ -185,7 +186,7 @@ class BehaviouralPlanner:
 
         # Get goal based on the current lookahead
         goal_index, goal_path = self.get_goal_index(waypoints, ego_point, closest_index)
-        self._draw(goal_path, angle=ego_direction, short='y^-', settings=dict(markersize=10, label='Goal Path'))
+        self._draw(goal_path, 'y^-', markersize=10, label='Goal Path')
 
         # Skip no moving goal to not remain stuck
         while waypoints[goal_index][2] <= 0.1: goal_index += 1  
@@ -196,7 +197,7 @@ class BehaviouralPlanner:
         
         # Draw all the traffic lights
         for i, tl in enumerate([tl[3] for tl in traffic_lights]):
-            self._draw(tl, angle=ego_direction, short='-', settings=dict(markersize=10, color='#ff7878', label=f'Trafficlight {i}'))
+            self._draw(tl, '-', markersize=10, color='#ff7878', label=f'Trafficlight {i}')
 
         # Update input info about trafficlights
         for i, tl in enumerate([tl for tl in traffic_lights]):
@@ -212,7 +213,7 @@ class BehaviouralPlanner:
             self._draw(v, angle=ego_direction, short='--', settings=dict(color='#ff4d4d', label=f'Vehicle {i}'))
 
         # Draw the vehicle check area
-        self._draw(veh_chech_area, angle=ego_direction, short='b--', settings=dict(linewidth=2, label='Check vehicle area'))
+        self._draw(veh_chech_area, 'b--', label='Check vehicle area')
 
         # Update input info about vehicles
         for i, v in enumerate([v for v in vehicles]):
@@ -221,18 +222,15 @@ class BehaviouralPlanner:
 
         # --------------- PEDESTRIANS ------------------------------
         # Check for pedestrian presence
-        pedestrian_presence, pedestrians, ped_chech_area, ped_extended_area = self.check_for_pedestrians(ego_point, closed_loop_speed, goal_path, ego_direction)
+        pedestrian_presence, pedestrians, ped_chech_area, ped_extended_area = self.check_for_pedestrians(ego_point, closed_loop_speed, goal_path)
 
         # Draw all the found pedestrian
         for i, p in enumerate(pedestrians):
-            self._draw(p[4], angle=ego_direction, short='--', settings=dict(color='#fc2626', label=f'Pedestrian {i}'))
+            self._draw(p[4], '--', color='#fc2626', label=f'Pedestrian {i}')
 
         # Draw the pedestrian check area
-        self._draw(ped_chech_area, angle=ego_direction, short='c:', settings=dict(label='Check pedestrian area'))
-        self._draw(ped_extended_area, angle=ego_direction, short='k:', settings=dict(label='Extended check pedestrian'))
-
-        if pedestrian_presence:
-            self._draw(Point(self._waypoints[pedestrians[0][0]][0:2]), ego_direction, "r.", dict(markersize=20))
+        self._draw(ped_chech_area, 'c:', label='Check pedestrian area')
+        self._draw(ped_extended_area, short='k:', label='Extended check pedestrian')
 
         # Update input info about pedestrians
         for i, p in enumerate([p for p in pedestrians]):
@@ -241,7 +239,7 @@ class BehaviouralPlanner:
 
         # --------------- Update presence of obstacles -------------
         self._before_pedestrian_present = pedestrian_presence
-        self._before_vehicle_present = vehicle_presence
+        # self._before_vehicle_present = vehicle_presence
         self._before_tl_present = traffic_light_presence
 
         # --------------- Update current input draw ----------------
@@ -423,7 +421,7 @@ class BehaviouralPlanner:
 
         return intersection_flag, intersection, path_bb
 
-    def check_for_pedestrians(self, ego_point, ego_speed, goal_path, ego_direction):
+    def check_for_pedestrians(self, ego_point, ego_speed, goal_path):
         """Check in the path for presence of pedestrians.
 
         Args:
@@ -468,7 +466,10 @@ class BehaviouralPlanner:
                     pedestrian_proj = Point(pedestrian_point.x + 8 * np.cos(pedestrian_orientation), 
                                             pedestrian_point.y + 8 * np.sin(pedestrian_orientation))
                     pedestrian_path = LineString([pedestrian_point, pedestrian_proj])
-                    self._draw(pedestrian_path, ego_direction, 'm^:')
+
+                    # Draw the pedestrian and its probable path
+                    self._draw(pedestrian, 'm:')
+                    self._draw(pedestrian_path, 'm:')
 
                     # Check if the pedestrian path intersect the vehicle path
                     path_intersection = pedestrian_path.intersection(goal_path)
@@ -477,9 +478,9 @@ class BehaviouralPlanner:
                         # Compute in how time the car reach the path intersection (x2)
                         dist_from_intersection = ego_point.distance(Point(*path_intersection.coords[0]))
                         if ego_speed < 0.2:
-                            time_to_dist = 4  # s
+                            time_to_dist = 1  # s
                         else:
-                            time_to_dist = (dist_from_intersection / ego_speed) * 2
+                            time_to_dist = (dist_from_intersection / ego_speed) * 1.4
 
                         # Project the pedestrian on his path, at 0.5 second step, and check if the pedestrian is coming in the road,
                         # basing on it's velocity
@@ -488,7 +489,7 @@ class BehaviouralPlanner:
                             pedestrian_distance = pedestrian_speed * ctime
                             pedestrian_proj = translate(pedestrian, pedestrian_distance * np.cos(pedestrian_orientation), 
                                                         pedestrian_distance * np.sin(pedestrian_orientation), 0)
-                            self._draw(pedestrian_proj, ego_direction, 'm')
+                            self._draw(pedestrian_proj, 'm:')
 
                             if pedestrian_proj.intersects(path_bb):
                                 pedestrian_in_road = True
