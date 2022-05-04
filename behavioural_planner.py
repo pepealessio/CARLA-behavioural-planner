@@ -210,7 +210,7 @@ class BehaviouralPlanner:
 
         # Draw all the found vehicle
         for i, v in enumerate([v[4] for v in vehicles]):
-            self._draw(v, angle=ego_direction, short='--', settings=dict(color='#ff4d4d', label=f'Vehicle {i}'))
+            self._draw(v, '--', color='#ff4d4d', label=f'Vehicle {i}')
 
         # Draw the vehicle check area
         self._draw(veh_chech_area, 'b--', label='Check vehicle area')
@@ -408,10 +408,15 @@ class BehaviouralPlanner:
                 _, closest_index = get_closest_index(self._waypoints, other_vehicle_point)
                 dist_from_vehicle = ego_point.distance(other_vehicle_point)
 
-                vehicle_position = self._vehicle['position'][key]
-                vehicle_speed = self._vehicle['speeds'][key]
+                # Print untracked vehicle
+                self._draw(other_vehicle_point, 'm--')
 
-                intersection.append([closest_index, vehicle_position, vehicle_speed, dist_from_vehicle, vehicle])
+                if dist_from_vehicle <= self._follow_lead_vehicle_lookahead:
+
+                    vehicle_position = self._vehicle['position'][key]
+                    vehicle_speed = self._vehicle['speeds'][key]
+
+                    intersection.append([closest_index, vehicle_position, vehicle_speed, dist_from_vehicle, vehicle])
 
         # The lead vehicle can be said to be present if there is at least one vehicle in the area.
         intersection_flag = len(intersection) > 0
