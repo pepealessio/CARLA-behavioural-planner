@@ -12,6 +12,7 @@ import time
 import math
 from numpy.core.defchararray import index
 import controller2d
+import controller2d_AR
 import configparser 
 import local_planner
 import behavioural_planner
@@ -842,7 +843,7 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
             #############################################
             # This is where we take the controller2d.py class
             # and apply it to the simulator
-            controller = controller2d.Controller2D(waypoints)
+            controller = controller2d_AR.Controller2D(waypoints)
             
 
             #############################################
