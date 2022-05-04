@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from pkgutil import extend_path
 import numpy as np
 from shapely.geometry import Point, LineString, Polygon, CAP_STYLE
 from shapely.affinity import rotate, translate
@@ -8,9 +9,11 @@ import behaviourial_fsm
 
 
 # Define x dimension of the bounding box to check for obstacles.
-BB_PATH = 1.5  # m
-BB_PEDESTRIAN_LEFT = 1.5 # m
-BB_PEDESTRIAN_RIGHT = 1.5 # m
+BB_PATH_LEFT = 1.5  # m
+BB_PATH_RIGHT = 1.5  # m
+BB_EXT_PATH_LEFT = 3.5  # m
+BB_PEDESTRIAN_LEFT = 1.5  # m
+BB_PEDESTRIAN_RIGHT = 1.5  # m
 BB_EXT_PEDESTRIAN_LEFT = 5  # m
 BB_EXT_PEDESTRIAN_RIGHT = 2.5  # m
 
@@ -376,7 +379,7 @@ class BehaviouralPlanner:
 
         return intersection_flag, intersection
 
-    def check_for_vehicle(self, ego_point, goal_path):
+    def check_for_vehicle(self, ego_point, goal_path, check_left=False):
         """Check in the path for presence of vehicle.
 
         Args:
@@ -396,7 +399,8 @@ class BehaviouralPlanner:
         vehicle_speed = 0
 
         # Starting from the goal line, create an area to check for vehicle
-        path_bb = goal_path.buffer(BB_PATH, cap_style=CAP_STYLE.flat)
+        path_bb = unary_union([goal_path.buffer(BB_PATH_RIGHT, single_sided=True), goal_path.buffer(-(BB_PATH_LEFT), single_sided=True)])
+        ext_path_bb = unary_union([goal_path.buffer(BB_PATH_RIGHT, single_sided=True), goal_path.buffer(-(BB_PATH_LEFT+BB_EXT_PATH_LEFT), single_sided=True)])
 
         # Check all vehicles whose bounding box intersects the control area
         intersection = []
@@ -417,6 +421,9 @@ class BehaviouralPlanner:
                     vehicle_speed = self._vehicle['speeds'][key]
 
                     intersection.append([closest_index, vehicle_position, vehicle_speed, dist_from_vehicle, vehicle])
+            
+            elif vehicle.intersects(ext_path_bb):
+                self._draw(vehicle, 'm-.')
 
         # The lead vehicle can be said to be present if there is at least one vehicle in the area.
         intersection_flag = len(intersection) > 0
@@ -559,6 +566,56 @@ class BehaviouralPlanner:
                 intersection.append([closest_index, pedestrian_position, pedestrian_speed, dist_from_pedestrian, pedestrian])
 
         # A pedestrian can be said to be present if there is at least one vehicle in the area.
+        intersection_flag = len(intersection) > 0
+
+        # Sort the vehicle by their distance from ego
+        intersection = sorted(intersection, key=lambda x: x[3])
+
+        return intersection_flag, intersection, path_bb
+
+    def _check_for_vehicle(self, ego_point, goal_path):
+        """Check in the path for presence of vehicle.
+
+        Args:
+            ego_point (Point): The point represent the position of the vehicle.
+            goal_path (LineString): The linestring represent the path until the goal.
+
+        Returns:
+            [intersection_flag, intersection, path_bb]:
+                intersection_flag (bool): If true, at least one vehicle is present.
+                intersection (List[Tuple[int, Point, float, float, Polygon]]): a list containing, for each vehicle, the closest index,
+                    the position point, the speed, the distance from the vehicle, and the bounding box of the vehicle.
+                path_bb (Polygon): the check area.
+        """
+        # Default return parameter
+        intersection_flag = False
+        vehicle_position = None
+        vehicle_speed = 0
+
+        # Starting from the goal line, create an area to check for vehicle
+        path_bb = goal_path.buffer(BB_PATH, cap_style=CAP_STYLE.flat)
+
+        # Check all vehicles whose bounding box intersects the control area
+        intersection = []
+        for key, vehicle_bb in enumerate(self._vehicle['fences']):
+            vehicle = Polygon(vehicle_bb)
+
+            if vehicle.intersects(path_bb):
+                other_vehicle_point = Point(self._vehicle['position'][key][0], self._vehicle['position'][key][1])
+                _, closest_index = get_closest_index(self._waypoints, other_vehicle_point)
+                dist_from_vehicle = ego_point.distance(other_vehicle_point)
+
+                # Print untracked vehicle
+                self._draw(other_vehicle_point, 'm--')
+
+                if dist_from_vehicle <= self._follow_lead_vehicle_lookahead:
+
+                    vehicle_position = self._vehicle['position'][key]
+                    vehicle_speed = self._vehicle['speeds'][key]
+
+                    intersection.append([closest_index, vehicle_position, vehicle_speed, dist_from_vehicle, vehicle])
+
+        # The lead vehicle can be said to be present if there is at least one vehicle in the area.
         intersection_flag = len(intersection) > 0
 
         # Sort the vehicle by their distance from ego
