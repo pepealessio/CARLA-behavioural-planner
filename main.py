@@ -112,7 +112,7 @@ CIRCLE_OFFSETS         = [-1.0, 1.0, 3.0] # m
 CIRCLE_RADII           = [1.5, 1.5, 1.5]  # m
 TIME_GAP               = 1.0              # s
 PATH_SELECT_WEIGHT     = 10
-A_MAX                  = 2.5              # m/s^2
+A_MAX                  = 6.5              # m/s^2
 SLOW_SPEED             = 2.0              # m/s
 STOP_LINE_BUFFER       = 3.5              # m
 LEAD_VEHICLE_LOOKAHEAD = 15.0             # m
@@ -670,8 +670,8 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
 
             waypoints = []
             waypoints_route = mission_planner.compute_route(source, source_ori, destination, destination_ori)
-            desired_speed = 5.0
-            turn_speed    = 2.5
+            desired_speed = 11.1  # 40 Km/h
+            turn_speed    = 5.0  # 18 Km/h
 
             intersection_nodes = mission_planner.get_intersection_nodes()
             intersection_pair = []
@@ -1161,7 +1161,7 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                         # Compute the velocity profile for the path, and compute the waypoints.
                         desired_speed = bp._goal_state[2]
                         decelerate_to_stop = bp._state == behaviourial_fsm.DECELERATE_TO_STOP
-                        local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_stop, bp._lead_car_state, bp._follow_lead_vehicle)
+                        local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_stop, None, False) # bp._lead_car_state, bp._follow_lead_vehicle)
 
                         if local_waypoints != None:
                             # Update the controller waypoint path with the best local path.
