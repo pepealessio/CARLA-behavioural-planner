@@ -1161,7 +1161,7 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                         # Compute the velocity profile for the path, and compute the waypoints.
                         desired_speed = bp._goal_state[2]
                         decelerate_to_stop = bp._state == behaviourial_fsm.DECELERATE_TO_STOP
-                        local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_stop, None, False) # bp._lead_car_state, bp._follow_lead_vehicle)
+                        local_waypoints = lp._velocity_planner.compute_velocity_profile(best_path, desired_speed, ego_state, current_speed, decelerate_to_stop, bp._lead_car_state, bp._follow_lead_vehicle)
 
                         if local_waypoints != None:
                             # Update the controller waypoint path with the best local path.

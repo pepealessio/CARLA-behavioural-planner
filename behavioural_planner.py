@@ -277,6 +277,8 @@ class BehaviouralPlanner:
         self._follow_lead_vehicle = self._fsm.get_from_memory('follow_lead_vehicle')
         self._lead_car_state = self._fsm.get_from_memory('lead_car_state')
 
+        print(self._follow_lead_vehicle)
+
     # Gets the goal index in the list of waypoints, based on the lookahead and
     # the current ego state. In particular, find the earliest waypoint that has accumulated
     # arc length (including closest_len) that is greater than or equal to self._lookahead.
@@ -420,12 +422,10 @@ class BehaviouralPlanner:
                 # Print untracked vehicle
                 self._draw(other_vehicle_point, 'm--')
 
-                if dist_from_vehicle <= self._follow_lead_vehicle_lookahead:
+                vehicle_position = self._vehicle['position'][key]
+                vehicle_speed = self._vehicle['speeds'][key]
 
-                    vehicle_position = self._vehicle['position'][key]
-                    vehicle_speed = self._vehicle['speeds'][key]
-
-                    intersection.append([closest_index, vehicle_position, vehicle_speed, dist_from_vehicle, vehicle])
+                intersection.append([closest_index, vehicle_position, vehicle_speed, dist_from_vehicle, vehicle])
             
             elif vehicle.intersects(ext_path_bb):
                 self._draw(vehicle, 'm-.')
