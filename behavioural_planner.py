@@ -277,8 +277,6 @@ class BehaviouralPlanner:
         self._follow_lead_vehicle = self._fsm.get_from_memory('follow_lead_vehicle')
         self._lead_car_state = self._fsm.get_from_memory('lead_car_state')
 
-        print(self._follow_lead_vehicle)
-
     # Gets the goal index in the list of waypoints, based on the lookahead and
     # the current ego state. In particular, find the earliest waypoint that has accumulated
     # arc length (including closest_len) that is greater than or equal to self._lookahead.
