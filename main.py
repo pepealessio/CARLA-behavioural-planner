@@ -12,6 +12,7 @@ import time
 import math
 from numpy.core.defchararray import index
 import controller2d
+import controller2d_AR
 import configparser 
 import local_planner
 import behavioural_planner
@@ -111,7 +112,7 @@ CIRCLE_OFFSETS         = [-1.0, 1.0, 3.0] # m
 CIRCLE_RADII           = [1.5, 1.5, 1.5]  # m
 TIME_GAP               = 1.0              # s
 PATH_SELECT_WEIGHT     = 10
-A_MAX                  = 2.5              # m/s^2
+A_MAX                  = 6.5              # m/s^2
 SLOW_SPEED             = 2.0              # m/s
 STOP_LINE_BUFFER       = 3.5              # m
 LEAD_VEHICLE_LOOKAHEAD = 20.0             # m
@@ -669,8 +670,8 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
 
             waypoints = []
             waypoints_route = mission_planner.compute_route(source, source_ori, destination, destination_ori)
-            desired_speed = 5.0
-            turn_speed    = 2.5
+            desired_speed = 11.1  # 40 Km/h
+            turn_speed    = 5.0  # 18 Km/h
 
             intersection_nodes = mission_planner.get_intersection_nodes()
             intersection_pair = []
@@ -842,7 +843,7 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
             #############################################
             # This is where we take the controller2d.py class
             # and apply it to the simulator
-            controller = controller2d.Controller2D(waypoints)
+            controller = controller2d_AR.Controller2D(waypoints)
             
 
             #############################################
@@ -1052,7 +1053,7 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                 ###########################################################
                 # --------------- Read pedestrian info ----------------
                 ###########################################################
-                pedestrian_info=dict(position=[], fences=[], speeds=[])
+                pedestrian_info=dict(position=[], fences=[], speeds=[], orientations=[])
                 for agent in measurement_data.non_player_agents:
                     if agent.HasField('pedestrian'):
                         # Get position
@@ -1066,10 +1067,10 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                         pedestrian_info['fences'].append(bb)
                         
                         # Get forward speed
-                        pedestrian_info['speeds'].append(agent.pedestrian.forward_speed) 
+                        pedestrian_info['speeds'].append(agent.pedestrian.forward_speed)
+                        pedestrian_info['orientations'].append(np.radians(agent.pedestrian.transform.rotation.yaw)) 
                 bp.set_pedestrians(pedestrian_info)
-                    
-
+                
                 # UPDATE HERE the obstacles list
                 obstacles = []
 
@@ -1132,6 +1133,9 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                     # update controller
                     controller.update_waypoints(waypoint)
 
+                    # Update Obstacles
+                    obstacles = bp.get_obstacles()
+
                     # Compute the goal state set from the behavioural planner's computed goal state.
                     goal_state_set = lp.get_goal_state_set(bp._goal_index, bp._goal_state, waypoints, ego_state)
 
@@ -1142,7 +1146,7 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                     paths = local_planner.transform_paths(paths, ego_state)
 
                     # Perform collision checking.
-                    collision_check_array = lp._collision_checker.collision_check(paths, [])
+                    collision_check_array = lp._collision_checker.collision_check(paths, obstacles)
 
                     # Compute the best local path.
                     best_index = lp._collision_checker.select_best_path_index(paths, collision_check_array, bp._goal_state)
@@ -1223,14 +1227,15 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                     trajectory_fig.roll("trajectory", current_x, current_y) 
                     trajectory_fig.roll("car", current_x, current_y) 
                     
-                    # Load parked car points
-                    if len(obstacles) > 0:
-                        x = obstacles[:,:,0]
-                        y = obstacles[:,:,1]
-                        x = np.reshape(x, x.shape[0] * x.shape[1])
-                        y = np.reshape(y, y.shape[0] * y.shape[1])
+                    # # Load parked car points
+                    # obstacles_np = np.array(obstacles)
+                    # if obstacles_np.shape[0] > 0:
+                    #     x = obstacles_np[:,:,0]
+                    #     y = obstacles_np[:,:,1]
+                    #     x = np.reshape(x, x.shape[0] * x.shape[1])
+                    #     y = np.reshape(y, y.shape[0] * y.shape[1])
 
-                        trajectory_fig.roll("obstacles_points", x, y)
+                    #     trajectory_fig.roll("obstacles_points", x, y)
 
                     
                     forward_speed_fig.roll("forward_speed", 
