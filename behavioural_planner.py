@@ -382,6 +382,9 @@ class BehaviouralPlanner:
         # The trafficlight can be said to be present if there is at least one trafficlight in the area.
         intersection_flag = len(intersection) > 0
 
+        # Order by distance
+        intersection = sorted(intersection, key=lambda x: x[3])
+
         return intersection_flag, intersection
 
     def check_for_vehicle(self, ego_point, goal_path):
@@ -424,6 +427,8 @@ class BehaviouralPlanner:
                 else:
                     vehicle_position = self._vehicle['position'][key]
                     vehicle_speed = self._vehicle['speeds'][key]
+
+                    closest_index = self.get_stop_index(ego_point, other_vehicle_point)
 
                     intersection.append([closest_index, vehicle_position, vehicle_speed, dist_from_vehicle, vehicle])
             
@@ -472,6 +477,7 @@ class BehaviouralPlanner:
             if pedestrian.intersects(extended_path_bb):
                 pedestrian_point = Point(self._pedestrians['position'][key][0], self._pedestrians['position'][key][1])
                 pedestrian_speed = self._pedestrians['speeds'][key]
+                pedestrian_position = self._pedestrians['position'][key]
                 
                 # Check if the pedestrian is in the middle of the road
                 pedestrian_in_road = pedestrian.intersects(path_bb)
@@ -489,7 +495,7 @@ class BehaviouralPlanner:
                     self._draw(pedestrian_path, 'm:')
 
                     # Check if the pedestrian path intersect the vehicle path
-                    path_intersection = pedestrian_path.intersection(goal_path)
+                    path_intersection = pedestrian_path.intersection(path_bb)
 
                     if len(path_intersection.coords) > 0:
                         # Compute in how time the car reach the path intersection (x2)
@@ -509,6 +515,16 @@ class BehaviouralPlanner:
                             self._draw(pedestrian_proj, 'm:')
 
                             if pedestrian_proj.intersects(path_bb):
+                                # Take the road point closest to the pedestrian
+                                dist = - float('inf')
+                                int_coords = None
+                                for c in path_intersection.coords:
+                                    tmp_dist = pedestrian_point.distance(Point(c))
+                                    if tmp_dist < dist:
+                                        dist = tmp_dist
+                                        int_coords = c
+                                
+                                pedestrian_position = int_coords
                                 pedestrian_in_road = True
                                 break
                             ctime += 0.5
@@ -517,9 +533,6 @@ class BehaviouralPlanner:
                 if pedestrian_in_road:
                     closest_index = self.get_stop_index(ego_point, pedestrian_point)
                     dist_from_pedestrian = ego_point.distance(pedestrian_point)
-
-                    pedestrian_position = self._pedestrians['position'][key]
-                    pedestrian_speed = self._pedestrians['speeds'][key]
 
                     intersection.append([closest_index, pedestrian_position, pedestrian_speed, dist_from_pedestrian, pedestrian])
 
@@ -544,15 +557,16 @@ class BehaviouralPlanner:
         Returns:
             stop_index: the index of the waypoint
         """
-        _, obstacle_index = get_closest_index(self._waypoints,obstacle_point)
-        is_obstacle_before, obst_proj_point = check_is_before(self._waypoints, obstacle_point, obstacle_index)
+        _, obstacle_index = get_closest_index(self._waypoints, obstacle_point)
+        _, ego_index = get_closest_index(self._waypoints, ego_point)
 
+        is_obstacle_before, obst_proj_point = check_is_before(self._waypoints, obstacle_point, obstacle_index)
         is_ego_before_prev, ego_proj_point = check_is_before(self._waypoints, ego_point, obstacle_index-1)
         
         if not is_obstacle_before:
             stop_index = obstacle_index
         else:
-            if is_ego_before_prev:
+            if is_ego_before_prev or (ego_index < obstacle_index-1):
                 stop_index = obstacle_index-1
             else:
                 # If there's not enough space between the waypoints, don't add the waypoint
