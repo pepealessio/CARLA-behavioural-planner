@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-from pkgutil import extend_path
 import numpy as np
-from shapely.geometry import Point, LineString, Polygon, CAP_STYLE
+from shapely.geometry import Point, LineString, Polygon
 from shapely.affinity import rotate, translate
-from shapely.ops import unary_union
+from shapely.ops import unary_union, nearest_points
 import matplotlib.pyplot as plt
 import behaviourial_fsm
 
@@ -16,6 +15,9 @@ BB_PEDESTRIAN_LEFT = 1.5  # m
 BB_PEDESTRIAN_RIGHT = 1.5  # m
 BB_EXT_PEDESTRIAN_LEFT = 5  # m
 BB_EXT_PEDESTRIAN_RIGHT = 2.5  # m
+
+# Obstacle extension
+BB_OBSTACLE_EXTENSION = 0.25  # m
 
 
 class BehaviouralPlanner:
@@ -413,7 +415,7 @@ class BehaviouralPlanner:
         # Check all vehicles whose bounding box intersects the control area
         intersection = []
         for key, vehicle_bb in enumerate(self._vehicle['fences']):
-            vehicle = Polygon(vehicle_bb)
+            vehicle = Polygon(vehicle_bb).buffer(BB_OBSTACLE_EXTENSION)
 
             if vehicle.intersects(path_bb):
                 other_vehicle_point = Point(self._vehicle['position'][key][0], self._vehicle['position'][key][1])
@@ -426,16 +428,11 @@ class BehaviouralPlanner:
                 else:
                     vehicle_position = self._vehicle['position'][key]
                     vehicle_speed = self._vehicle['speeds'][key]
-                    vehicle_yaw = self._vehicle['orientations'][key]
-                    vehicle_dimentions = self._vehicle['dimentions'][key][0] + 1.0
-                    vehicle_yaw = (vehicle_yaw+np.pi)%np.pi
-                    vehicle_closest_point = translate(other_vehicle_point, vehicle_dimentions * np.sin(vehicle_yaw), 
-                                                        vehicle_dimentions * np.cos(vehicle_yaw), 0)
-                    
-                    
-                                            
+     
+                    vehicle_nearest_point, _ = nearest_points(vehicle, ego_point)
+                    # self._draw(vehicle_nearest_point, 'k.', markersize=15)
 
-                    closest_index = self.get_stop_index(ego_point, vehicle_closest_point)
+                    closest_index = self.get_stop_index(ego_point, vehicle_nearest_point)
 
                     intersection.append([closest_index, vehicle_position, vehicle_speed, dist_from_vehicle, vehicle])
             
@@ -479,7 +476,7 @@ class BehaviouralPlanner:
         # Check all pedestrians whose bounding box intersects the control area
         intersection = []
         for key, pedestrian_bb in enumerate(self._pedestrians['fences']):
-            pedestrian = Polygon(pedestrian_bb)
+            pedestrian = Polygon(pedestrian_bb).buffer(BB_OBSTACLE_EXTENSION)
 
             if pedestrian.intersects(extended_path_bb):
                 pedestrian_point = Point(self._pedestrians['position'][key][0], self._pedestrians['position'][key][1])
@@ -538,7 +535,10 @@ class BehaviouralPlanner:
 
                 # Get pedestrians info if one of the two cases.
                 if pedestrian_in_road:
-                    closest_index = self.get_stop_index(ego_point, pedestrian_point)
+                    pedestrian_nearest_point, _ = nearest_points(pedestrian, ego_point)
+                    # self._draw(pedestrian_nearest_point, 'k.', markersize=15)
+
+                    closest_index = self.get_stop_index(ego_point, pedestrian_nearest_point)
                     dist_from_pedestrian = ego_point.distance(pedestrian_point)
 
                     intersection.append([closest_index, pedestrian_position, pedestrian_speed, dist_from_pedestrian, pedestrian])
