@@ -420,16 +420,16 @@ class BehaviouralPlanner:
                 _, closest_index = get_closest_index(self._waypoints, other_vehicle_point)
                 dist_from_vehicle = ego_point.distance(other_vehicle_point)
 
-                # Print untracked vehicle
-                # if dist_from_vehicle > self._follow_lead_vehicle_lookahead:
-                #     self._draw(other_vehicle_point, 'm--')
-                #else:
-                vehicle_position = self._vehicle['position'][key]
-                vehicle_speed = self._vehicle['speeds'][key]
+                #Print untracked vehicle
+                if dist_from_vehicle > self._follow_lead_vehicle_lookahead:
+                    self._draw(other_vehicle_point, 'm--')
+                else:
+                    vehicle_position = self._vehicle['position'][key]
+                    vehicle_speed = self._vehicle['speeds'][key]
 
-                closest_index = self.get_stop_index(ego_point, other_vehicle_point)
+                    closest_index = self.get_stop_index(ego_point, other_vehicle_point)
 
-                intersection.append([closest_index, vehicle_position, vehicle_speed, dist_from_vehicle, vehicle])
+                    intersection.append([closest_index, vehicle_position, vehicle_speed, dist_from_vehicle, vehicle])
             
             elif vehicle.intersects(ext_path_bb):
                 self._draw(vehicle, 'm-.')
