@@ -247,7 +247,7 @@ class BehaviouralPlanner:
 
         # --------------- Update presence of obstacles -------------
         self._before_pedestrian_present = pedestrian_presence
-        # self._before_vehicle_present = vehicle_presence
+        self._before_vehicle_present = vehicle_presence
         self._before_tl_present = traffic_light_presence
 
         # --------------- Update current input draw ----------------
@@ -421,16 +421,15 @@ class BehaviouralPlanner:
                 dist_from_vehicle = ego_point.distance(other_vehicle_point)
 
                 # Print untracked vehicle
-                if dist_from_vehicle > self._follow_lead_vehicle_lookahead:
-                    self._draw(other_vehicle_point, 'm--')
-                
-                else:
-                    vehicle_position = self._vehicle['position'][key]
-                    vehicle_speed = self._vehicle['speeds'][key]
+                # if dist_from_vehicle > self._follow_lead_vehicle_lookahead:
+                #     self._draw(other_vehicle_point, 'm--')
+                #else:
+                vehicle_position = self._vehicle['position'][key]
+                vehicle_speed = self._vehicle['speeds'][key]
 
-                    closest_index = self.get_stop_index(ego_point, other_vehicle_point)
+                closest_index = self.get_stop_index(ego_point, other_vehicle_point)
 
-                    intersection.append([closest_index, vehicle_position, vehicle_speed, dist_from_vehicle, vehicle])
+                intersection.append([closest_index, vehicle_position, vehicle_speed, dist_from_vehicle, vehicle])
             
             elif vehicle.intersects(ext_path_bb):
                 self._draw(vehicle, 'm-.')
@@ -517,7 +516,7 @@ class BehaviouralPlanner:
                             if pedestrian_proj.intersects(path_bb):
                                 # Take the road point closest to the pedestrian
                                 dist = - float('inf')
-                                int_coords = None
+                                int_coords = pedestrian_position
                                 for c in path_intersection.coords:
                                     tmp_dist = pedestrian_point.distance(Point(c))
                                     if tmp_dist < dist:
