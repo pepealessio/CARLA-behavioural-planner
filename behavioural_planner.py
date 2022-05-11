@@ -427,12 +427,15 @@ class BehaviouralPlanner:
                     vehicle_position = self._vehicle['position'][key]
                     vehicle_speed = self._vehicle['speeds'][key]
                     vehicle_yaw = self._vehicle['orientations'][key]
-                    vehicle_dimentions = self._vehicle['dimentions'][key]
+                    vehicle_dimentions = self._vehicle['dimentions'][key][0] + 1.0
+                    vehicle_yaw = (vehicle_yaw+np.pi)%np.pi
+                    vehicle_closest_point = translate(other_vehicle_point, vehicle_dimentions * np.sin(vehicle_yaw), 
+                                                        vehicle_dimentions * np.cos(vehicle_yaw), 0)
+                    
+                    
+                                            
 
-                    ego_closest_point = Point(ego_point.x + vehicle_dimentions[2] * np.cos(vehicle_yaw),
-                                              ego_point.y + vehicle_dimentions[2] * np.sin(vehicle_yaw))
-
-                    closest_index = self.get_stop_index(ego_closest_point, other_vehicle_point)
+                    closest_index = self.get_stop_index(ego_point, vehicle_closest_point)
 
                     intersection.append([closest_index, vehicle_position, vehicle_speed, dist_from_vehicle, vehicle])
             
