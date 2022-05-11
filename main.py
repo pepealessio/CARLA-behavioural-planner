@@ -2,6 +2,7 @@
 from __future__ import print_function
 from __future__ import division
 from datetime import datetime
+import statistics
 
 # System level imports
 import sys
@@ -772,10 +773,7 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
             waypoints = np.array(waypoints)
 
             # ------------ Fix strange waypoints ---------------------
-            print(waypoints)
             waypoints = fix_waypoints(waypoints)
-            print('fixed')
-            print(waypoints)
 
             #######################################################################
             # -------------- Get initial traffic lights state ---------------------
@@ -990,6 +988,7 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
             prev_collision_pedestrians = 0
             prev_collision_other       = 0
 
+            iteration_time = []
             for frame in range(TOTAL_EPISODE_FRAMES):
                 # Gather current data from the CARLA server
                 measurement_data, sensor_data = client.read_data()
@@ -1114,6 +1113,8 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                 # to be operating at a frequency that is a division to the 
                 # simulation frequency.
                 if frame % LP_FREQUENCY_DIVISOR == 0:
+                    start_time = datetime.now()
+
                     # Compute open loop speed estimate.
                     open_loop_speed = lp._velocity_planner.get_open_loop_speed(current_timestamp - prev_timestamp)
 
@@ -1286,6 +1287,9 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                         lp_1d.refresh()
                         live_plot_timer.lap()
 
+                end_time = datetime.now()
+                iteration_time.append((end_time - start_time).total_seconds())
+
                 # Output controller command to CARLA server
                 send_control_command(client,
                                     throttle=cmd_throttle,
@@ -1309,6 +1313,12 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                 print("Reached the end of path. Writing to controller_output...")
             else:
                 print("Exceeded assessment time. Writing to controller_output...")
+
+            mean_iter_time = statistics.mean(iteration_time)
+            min_iter_time = min(iteration_time)
+            max_iter_time = max(iteration_time)
+            logging.log(logging.INFO, f"Iteration time: mean {mean_iter_time}, min {min_iter_time}, max {max_iter_time}.")
+
             # Stop the car
             send_control_command(client, throttle=0.0, steer=0.0, brake=1.0)
             # Store the various outputs
