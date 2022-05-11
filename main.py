@@ -1032,7 +1032,7 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                 ###########################################################
                 # --------------- Read vehicle info ----------------
                 ###########################################################
-                vehicle_info=dict(position=[], fences=[], speeds=[])
+                vehicle_info=dict(position=[], fences=[], speeds=[], orientations=[], dimentions=[])
                 for agent in measurement_data.non_player_agents:
                     if agent.HasField('vehicle'):
                         # Get position
@@ -1047,6 +1047,11 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                         
                         # Get forward speed
                         vehicle_info['speeds'].append(agent.vehicle.forward_speed)
+
+                        vehicle_info['orientations'].append(agent.vehicle.transform.rotation.yaw)
+                        vehicle_info['dimentions'].append((agent.vehicle.bounding_box.extent.x,
+                                                           agent.vehicle.bounding_box.extent.y,
+                                                           agent.vehicle.bounding_box.extent.z))
                 bp.set_vehicle(vehicle_info) 
 
                 ###########################################################
