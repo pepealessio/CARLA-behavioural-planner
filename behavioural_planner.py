@@ -129,6 +129,9 @@ class BehaviouralPlanner:
         return self._state_info, self._current_input
 
     # Handles state transitions and computes the goal state.
+    # NOTE: Since the FSM was implemented with the FSM class, here we receive the input to 
+    # the behavioural planner, we use the module ad described in the chaper 2.1 of the report
+    # and we use FSM.process() to evolve the FSM. 
     def transition_state(self, waypoints, ego_state, closed_loop_speed):
         """Handles state transitions and computes the goal state.  
         
@@ -282,6 +285,8 @@ class BehaviouralPlanner:
     # Gets the goal index in the list of waypoints, based on the lookahead and
     # the current ego state. In particular, find the earliest waypoint that has accumulated
     # arc length (including closest_len) that is greater than or equal to self._lookahead.
+    # NOTE: This is the implementation of "Path Analyzer" module described in the 2.1 chapter of the
+    #       report.
     def get_goal_index(self, waypoints, ego_point, closest_index):
         """Gets the goal index for the vehicle. 
         
@@ -350,6 +355,8 @@ class BehaviouralPlanner:
 
         return goal_index % len(waypoints), arc
 
+    # NOTE: This is the implementation of "Traffic Lights" module described in the 2.1 chapter of the
+    #       report.
     def check_for_traffic_lights(self, ego_point, goal_path):
         """Check in the path for presence of vehicle.
 
@@ -389,6 +396,8 @@ class BehaviouralPlanner:
 
         return intersection_flag, intersection
 
+    # NOTE: This is the implementation of "Vehicles" module described in the 2.1 chapter of the
+    #       report.
     def check_for_vehicle(self, ego_point, goal_path):
         """Check in the path for presence of vehicle.
 
@@ -447,6 +456,8 @@ class BehaviouralPlanner:
 
         return intersection_flag, intersection, path_bb
 
+    # NOTE: This is the implementation of "Pedestrians" module described in the 2.1 chapter of the
+    #       report.
     def check_for_pedestrians(self, ego_point, ego_speed, goal_path):
         """Check in the path for presence of pedestrians.
 
@@ -555,7 +566,6 @@ class BehaviouralPlanner:
     def get_stop_index(self, ego_point, obstacle_point, margin=1):
         """
         Find the stop index before an obstacle. If it doesn't exist add a waypoint to stop.
-        All cases are described in the figure # TODO
 
         Args:
             ego_point: the point of the vehicle
