@@ -10,7 +10,7 @@ DECELERATE_TO_STOP = 'Decelerate to Stop'
 STAY_STOPPED = 'Stay Stopped'
 
 # Stop speed threshold
-STOP_THRESHOLD = 0.1
+STOP_THRESHOLD = 1.5  # m/s
 
 # Enumerate Trafficlight State
 TRAFFICLIGHT_GREEN = 0
