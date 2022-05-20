@@ -473,7 +473,6 @@ def get_fsm():
     # Add states
     fsm.add_state(FOLLOW_LANE)
     fsm.add_state(DECELERATE_TO_STOP)
-    fsm.add_state(STAY_STOPPED)
     fsm.set_initial_state(FOLLOW_LANE)
 
     # Add transition
