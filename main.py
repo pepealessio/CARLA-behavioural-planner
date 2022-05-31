@@ -11,8 +11,6 @@ import argparse
 import logging
 import time
 import math
-from numpy.core.defchararray import index
-import controller2d
 import controller2d_AR
 import configparser 
 import local_planner
@@ -25,7 +23,10 @@ import numpy as np
 import tkinter as tk
 import threading
 from shapely.geometry import Point
+from shapely.affinity import translate
 from tqdm import tqdm
+from people_vehicles_detection import YoloV5Detect
+from image_to_3Dworld import Image2World
 
 # Script level imports
 sys.path.append(os.path.abspath(sys.path[0] + '/..'))
@@ -36,7 +37,7 @@ from carla.settings   import CarlaSettings
 from carla.tcp        import TCPConnectionError
 from carla.controller import utils
 from carla.sensor import Camera
-from carla.image_converter import labels_to_array, depth_to_array, to_bgra_array
+from carla.image_converter import labels_to_array, depth_to_array, to_bgra_array, depth_to_logarithmic_grayscale, labels_to_cityscapes_palette
 from carla.planner.city_track import CityTrack
 
 import warnings
@@ -62,7 +63,7 @@ SEED_VEHICLES          = 0      # seed for vehicle spawn randomizer
 # ---------------------- PERSONAL ---------------------------------------------
 ###############################################################################
 RETRY_SCENE_TIMES = 3
-USE_CAMERA = False      # See the car camera (useful in non-local server)
+USE_CAMERA = True      # See the car camera (useful in non-local server)
 VISUALIZE_STATE_INFO = True  # See a window with the state info
 TRAFFIC_LIGHT_STOP_LINE_LEN = 4     # The lenght of the stop line for traffic lights
 ###############################################################################
@@ -134,13 +135,27 @@ CONTROLLER_OUTPUT_FOLDER = os.path.dirname(os.path.realpath(__file__)) +\
                            '/controller_output/'
 
 # Camera parameters
-camera_parameters = {}
-camera_parameters['x'] = 1.8
-camera_parameters['y'] = 0
-camera_parameters['z'] = 1.3
-camera_parameters['width'] = 640
-camera_parameters['height'] = 480
-camera_parameters['fov'] = 120
+camera_parameters_0 = {}
+camera_parameters_0['x'] = 1.8
+camera_parameters_0['y'] = 0
+camera_parameters_0['z'] = 1.3
+camera_parameters_0['pitch'] = 0.17
+camera_parameters_0['roll'] = 0.0
+camera_parameters_0['yaw'] = 0.0
+camera_parameters_0['width'] = 300
+camera_parameters_0['height'] = 200
+camera_parameters_0['fov'] = 30
+
+camera_parameters_1 = {}
+camera_parameters_1['x'] = 1.8
+camera_parameters_1['y'] = 0
+camera_parameters_1['z'] = 1.3
+camera_parameters_1['pitch'] = 0.2
+camera_parameters_1['roll'] = 0.0
+camera_parameters_1['yaw'] = 0.0
+camera_parameters_1['width'] = 300
+camera_parameters_1['height'] = 200
+camera_parameters_1['fov'] = 100
 
     
 class StateInfo(threading.Thread):
@@ -267,6 +282,35 @@ def fix_waypoints(waypoints):
 
     return np.array(fixed_wp)
 
+def average_depth_from_ss(bb, ss_data, depth_data, obj_class):
+    """Using the semantic segmentation data and the depth data, compute the mean
+    depth.
+    """
+    # Semantic segmentation cutted data
+    array = labels_to_array(ss_data)
+    array = array[bb[1]:bb[3], bb[0]:bb[2]]
+    
+    if obj_class == 'vehicle':
+        key = 10
+    elif obj_class == 'pedestrian':
+        key = 4
+
+    # Points of the semantic segmentation with the target class
+    y, x = np.where(array == key)
+
+    # Average dept with all points of that class
+    depth = 0
+    for i in range(x.shape[0]):
+        depth += depth_data[bb[1] + y[i]][bb[0] + x[i]]
+    
+    # If no points in segmentation take just the mean point
+    if x.shape[0] != 0: 
+        depth /= x.shape[0]
+    else:
+        depth = depth_data[(bb[1] + bb[3]) // 2][(bb[0] + bb[2]) // 2]
+
+    return depth
+
 def rotate_x(angle):
     R = np.mat([[ 1,         0,           0],
                  [ 0, cos(angle), -sin(angle) ],
@@ -343,23 +387,51 @@ def make_carla_settings(args, num_pedestrians, num_vehicles, seed_pedestrians, s
         WeatherId=SIMWEATHER,
         QualityLevel=args.quality_level)
 
-    # Common cameras settings
-    cam_height = camera_parameters['z'] 
-    cam_x_pos = camera_parameters['x']
-    cam_y_pos = camera_parameters['y']
-    camera_width = camera_parameters['width']
-    camera_height = camera_parameters['height']
-    camera_fov = camera_parameters['fov']
-
     # Declare here your sensors
 
     #  RGB camera
     if USE_CAMERA:
-        camera0 = Camera("CameraRGB")
-        camera0.set_image_size(camera_width, camera_height)
-        camera0.set(FOV=camera_fov)
-        camera0.set_position(cam_x_pos, cam_y_pos, cam_height)
-        settings.add_sensor(camera0)
+        camera00 = Camera("Camera0RGB")
+        camera00.set_image_size(camera_parameters_0['width'], camera_parameters_0['height'])
+        camera00.set(FOV=camera_parameters_0['fov'])
+        camera00.set_position(camera_parameters_0['x'], camera_parameters_0['y'], camera_parameters_0['z'])
+        camera00.set_rotation(camera_parameters_0['pitch'], camera_parameters_0['yaw'], camera_parameters_0['roll'])
+        settings.add_sensor(camera00)
+
+        camera01 = Camera('Camera0SemSeg', PostProcessing='SemanticSegmentation')
+        camera01.set_image_size(camera_parameters_0['width'], camera_parameters_0['height'])
+        camera01.set(FOV=camera_parameters_0['fov'])
+        camera01.set_position(camera_parameters_0['x'], camera_parameters_0['y'], camera_parameters_0['z'])
+        camera01.set_rotation(camera_parameters_0['pitch'], camera_parameters_0['yaw'], camera_parameters_0['roll'])
+        settings.add_sensor(camera01)
+
+        camera02 = Camera('Camera0Depth', PostProcessing='Depth')
+        camera02.set_image_size(camera_parameters_0['width'], camera_parameters_0['height'])
+        camera02.set(FOV=camera_parameters_0['fov'])
+        camera02.set_position(camera_parameters_0['x'], camera_parameters_0['y'], camera_parameters_0['z'])
+        camera02.set_rotation(camera_parameters_0['pitch'], camera_parameters_0['yaw'], camera_parameters_0['roll'])
+        settings.add_sensor(camera02)
+
+        camera10 = Camera("Camera1RGB")
+        camera10.set_image_size(camera_parameters_1['width'], camera_parameters_1['height'])
+        camera10.set(FOV=camera_parameters_1['fov'])
+        camera10.set_position(camera_parameters_1['x'], camera_parameters_1['y'], camera_parameters_1['z'])
+        camera10.set_rotation(camera_parameters_1['pitch'], camera_parameters_1['yaw'], camera_parameters_1['roll'])
+        settings.add_sensor(camera10)
+
+        camera11 = Camera('Camera1SemSeg', PostProcessing='SemanticSegmentation')
+        camera11.set_image_size(camera_parameters_1['width'], camera_parameters_1['height'])
+        camera11.set(FOV=camera_parameters_1['fov'])
+        camera11.set_position(camera_parameters_1['x'], camera_parameters_1['y'], camera_parameters_1['z'])
+        camera11.set_rotation(camera_parameters_1['pitch'], camera_parameters_1['yaw'], camera_parameters_1['roll'])
+        settings.add_sensor(camera11)
+
+        camera12 = Camera('Camera1Depth', PostProcessing='Depth')
+        camera12.set_image_size(camera_parameters_1['width'], camera_parameters_1['height'])
+        camera12.set(FOV=camera_parameters_1['fov'])
+        camera12.set_position(camera_parameters_1['x'], camera_parameters_1['y'], camera_parameters_1['z'])
+        camera12.set_rotation(camera_parameters_1['pitch'], camera_parameters_1['yaw'], camera_parameters_1['roll'])
+        settings.add_sensor(camera12)
 
     return settings
 
@@ -842,6 +914,13 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
             # This is where we take the controller2d.py class
             # and apply it to the simulator
             controller = controller2d_AR.Controller2D(waypoints)
+
+
+            ## INIT YOLO DETECTOR
+            yd = YoloV5Detect()
+            ## INIT Converter
+            i2w_0 = Image2World(camera_parameters_0)
+            i2w_1 = Image2World(camera_parameters_1)
             
 
             #############################################
@@ -993,14 +1072,12 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                 # Gather current data from the CARLA server
                 measurement_data, sensor_data = client.read_data()
 
-                ###########################################################
-                # ------------------- Visualize Camera --------------------
-                ###########################################################
-                if USE_CAMERA:
-                    camera_data = sensor_data.get('CameraRGB', None)
-                    if camera_data is not None:
-                        camera_data = to_bgra_array(camera_data)
-                        cv2.imshow("CameraRGB", camera_data)
+                # Update pose and timestamp
+                prev_timestamp = current_timestamp
+                current_x, current_y, current_z, current_pitch, current_roll, current_yaw = \
+                    get_current_pose(measurement_data)
+                current_speed = measurement_data.player_measurements.forward_speed
+                current_timestamp = float(measurement_data.game_timestamp) / 1000.0
 
                 ###########################################################
                 # ------------------- State info --------------------------
@@ -1069,16 +1146,70 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                         pedestrian_info['speeds'].append(agent.pedestrian.forward_speed)
                         pedestrian_info['orientations'].append(np.radians(agent.pedestrian.transform.rotation.yaw)) 
                 bp.set_pedestrians(pedestrian_info)
+
+                ###########################################################
+                # ------------------- Visualize Camera --------------------
+                # and get data from detection.
+                ###########################################################
+                vehicle_3d =  []
+                pedestrian_3d = []
+
+                if USE_CAMERA:
+                    camera0_data = sensor_data.get('Camera0RGB', None)
+                    if camera0_data is not None:
+                        camera0_data = to_bgra_array(camera0_data)
+                        vehicle_box_0, pedestrian_box_0 = yd.predict(camera0_data)
+                        cv2.imshow("Camera0RGB", camera0_data)
+
+                    depth_camera0 = sensor_data.get('Camera0Depth', None)
+                    if depth_camera0 is not None:
+                        depth_array0 = depth_to_array(depth_camera0)
+
+                    sem_segmentation0 = sensor_data.get('Camera0SemSeg', None)
+
+
+                    camera1_data = sensor_data.get('Camera1RGB', None)
+                    if camera1_data is not None:
+                        camera1_data = to_bgra_array(camera1_data)
+                        vehicle_box_1, pedestrian_box_1 = yd.predict(camera1_data)
+                        cv2.imshow("Camera1RGB", camera1_data)
+
+                    depth_camera1 = sensor_data.get('Camera1Depth', None)
+                    if depth_camera1 is not None:
+                        depth_array1 = depth_to_array(depth_camera1)
+
+                    sem_segmentation1 = sensor_data.get('Camera1SemSeg', None)
+
+                    # Img to world
+                    if camera0_data is not None and depth_camera0 is not None and sem_segmentation0 is not None:
+                        for bb in vehicle_box_0:
+                            px = (bb[0] + bb[2]) // 2
+                            py = (bb[1] + bb[3]) // 2
+                            depth = average_depth_from_ss(bb, sem_segmentation0, depth_array0, 'vehicle')
+                            vehicle_3d.append(Point(i2w_0.convert([px, py], depth * 1000, current_x, current_y, 0, current_yaw)[:2]))
+
+                        for bb in pedestrian_box_0:
+                            px = (bb[0] + bb[2]) // 2
+                            py = (bb[1] + bb[3]) // 2
+                            depth = average_depth_from_ss(bb, sem_segmentation0, depth_array0, 'pedestrian')
+                            pedestrian_3d.append(Point(i2w_0.convert([px, py], depth * 1000, current_x, current_y, 0, current_yaw)[:2]))
+                
+                    
+                    if camera1_data is not None and depth_camera1 is not None and sem_segmentation1 is not None:
+                        for bb in vehicle_box_1:
+                            px = (bb[0] + bb[2]) // 2
+                            py = (bb[1] + bb[3]) // 2
+                            depth = average_depth_from_ss(bb, sem_segmentation1, depth_array1, 'vehicle')
+                            vehicle_3d.append(Point(i2w_1.convert([px, py], depth * 1000, current_x, current_y, 0, current_yaw)[:2]))
+
+                        for bb in pedestrian_box_1:
+                            px = (bb[0] + bb[2]) // 2
+                            py = (bb[1] + bb[3]) // 2
+                            depth = average_depth_from_ss(bb, sem_segmentation1, depth_array1, 'pedestrian')
+                            pedestrian_3d.append(Point(i2w_1.convert([px, py], depth * 1000, current_x, current_y, 0, current_yaw)[:2]))
                 
                 # UPDATE HERE the obstacles list
                 obstacles = []
-
-                # Update pose and timestamp
-                prev_timestamp = current_timestamp
-                current_x, current_y, current_z, current_pitch, current_roll, current_yaw = \
-                    get_current_pose(measurement_data)
-                current_speed = measurement_data.player_measurements.forward_speed
-                current_timestamp = float(measurement_data.game_timestamp) / 1000.0
 
                 # Wait for some initial time before starting the demo
                 if current_timestamp <= WAIT_TIME_BEFORE_START:
@@ -1124,6 +1255,9 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
 
                     # Set lookahead based on current speed.
                     bp.set_lookahead(BP_LOOKAHEAD_BASE + BP_LOOKAHEAD_TIME * open_loop_speed)
+
+                    bp.set_real_pedestrians(pedestrian_3d)
+                    bp.set_real_vehicles(vehicle_3d)
 
                     # Perform a state transition in the behavioural planner.
                     bp.transition_state(waypoints, ego_state, current_speed)

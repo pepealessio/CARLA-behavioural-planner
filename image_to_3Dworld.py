@@ -1,5 +1,7 @@
 from math import cos,sin,tan,pi
 import numpy as np
+from shapely.geometry import Point
+from shapely.affinity import translate
 
 
 def rotate_x(angle):
@@ -37,19 +39,19 @@ class Image2World():
         Args:
             camera_params(dict): A dictionary with the camera information.
         """
-        self._cam_x = camera_parameters['x']
-        self._cam_y = camera_parameters['y']
-        self._cam_z = camera_parameters['z'] 
-        self._cam_pitch = camera_parameters['pitch']
-        self._cam_roll = camera_parameters['roll']
-        self._cam_yaw = camera_parameters['yaw']
-        self._cam_width = camera_parameters['width'] 
-        self._cam_height = camera_parameters['height'] 
-        self._cam_fov = camera_parameters['fov']
+        self._cam_x = camera_params['x']
+        self._cam_y = camera_params['y']
+        self._cam_z = camera_params['z'] 
+        self._cam_pitch = camera_params['pitch']
+        self._cam_roll = camera_params['roll']
+        self._cam_yaw = camera_params['yaw']
+        self._cam_width = camera_params['width'] 
+        self._cam_height = camera_params['height'] 
+        self._cam_fov = camera_params['fov']
 
         self._set_intrinsic_matrix()
 
-    def _image_to_camera_frame(self, object_camera_frame):
+    def _image_to_camera_frame(self, object_camera_frame, car_yaw):
         """Transform the pixel from image frame to camera frame.
 
         Args:
@@ -57,15 +59,10 @@ class Image2World():
 
         Return: The point projected into the camera frame.
         """
-        # rotation_image_camera_frame = np.dot(rotate_z(-90 * pi / 180), rotate_x(-90 * pi / 180))
-        # image_camera_frame = np.zeros((4,4))
-        # image_camera_frame[:3,:3] = rotation_image_camera_frame
-        # image_camera_frame[:, -1] = [0, 0, 0, 1]
-
-        image_camera_frame = np.array([[0, 0, 1, 0],
-                                       [-1,0, 0, 0],
-                                       [0, -1,0, 0],
-                                       [0, 0, 0, 1]])
+        rotation_image_camera_frame = np.dot(rotate_z(car_yaw + 90 * pi / 180), rotate_x(90 * pi / 180))
+        image_camera_frame = np.zeros((4,4))
+        image_camera_frame[:3,:3] = rotation_image_camera_frame
+        image_camera_frame[:, -1] = [0, 0, 0, 1]
 
         return np.dot(image_camera_frame, object_camera_frame)
 
@@ -108,7 +105,7 @@ class Image2World():
         image_frame_vect_extended[-1] = 1
 
         # Projection Camera to Vehicle Frame
-        camera_frame = self._image_to_camera_frame(image_frame_vect_extended)
+        camera_frame = self._image_to_camera_frame(image_frame_vect_extended, car_yaw)
         camera_frame = camera_frame[:3]
         camera_frame = np.asarray(np.reshape(camera_frame, (1,3)))
 
@@ -119,7 +116,7 @@ class Image2World():
         camera_to_vehicle_frame = np.zeros((4,4))
         # Take into account the rotation of the camera respect to the car and the rotation of the car.
         # This works because the car does not rotate on pitch and roll, so yaw is coherent.
-        camera_to_vehicle_frame[:3,:3] = to_rot([self._cam_roll, self._cam_pitch, self._cam_yaw + car_yaw])
+        camera_to_vehicle_frame[:3,:3] = to_rot([self._cam_roll, self._cam_pitch, self._cam_yaw])
         # Take into account the rotation of the car and the position.
         rot_x = cos(car_yaw) * (self._cam_x - 0) - sin(car_yaw) * (self._cam_y - 0) + 0
         rot_y = sin(car_yaw) * (self._cam_x - 0) + cos(car_yaw) * (self._cam_y - 0) + 0
@@ -135,10 +132,10 @@ class Image2World():
 # DRIVER TEST            
 if __name__ == "__main__":
     camera_parameters = {}
-    camera_parameters['x'] = 1.8 
+    camera_parameters['x'] = 0 
     camera_parameters['y'] = 0.0
-    camera_parameters['z'] = 1.3 
-    camera_parameters['pitch'] = 0.17
+    camera_parameters['z'] = 0 
+    camera_parameters['pitch'] = 0.0
     camera_parameters['roll'] = 0.0
     camera_parameters['yaw'] = 0.0
     camera_parameters['width'] = 200 
@@ -148,9 +145,9 @@ if __name__ == "__main__":
     ego_x = 100
     ego_y = 200
     ego_z = 0
-    ego_yaw = 0
+    ego_yaw = -pi/4
 
     depth = 5
-    pixel_xy = [100,100]
+    pixel_xy = [10,100]
     c = Image2World(camera_parameters)
     print([round(x,2) for x in c.convert(pixel_xy, depth, ego_x, ego_y, ego_z, ego_yaw)])

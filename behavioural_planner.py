@@ -128,6 +128,12 @@ class BehaviouralPlanner:
         current input."""
         return self._state_info, self._current_input
 
+    def set_real_pedestrians(self, pedestrians):
+        self._real_pedestrians = pedestrians
+
+    def set_real_vehicles(self, vehicles):
+        self._real_vehicles = vehicles
+
     # Handles state transitions and computes the goal state.
     # NOTE: Since the FSM was implemented with the FSM class, here we receive the input to 
     # the behavioural planner, we use the module ad described in the chaper 2.1 of the report
@@ -249,6 +255,17 @@ class BehaviouralPlanner:
         for i, p in enumerate([p for p in pedestrians]):
             self._current_input += f'\n - Pedestrian {i}: ' + \
                 f'Position={tuple((round(x, 1) for x in p[1][:2]))}, Speed={round(p[2], 2)} m/s, Distance={round(p[3], 2)} m'
+
+        #########################
+        for v in self._real_vehicles:
+            #v = Point(v)
+            if v.distance(ego_point) <= np.min([self._lookahead, self._follow_lead_vehicle_lookahead]):
+                self._draw(v, 'k.', markersize=20)
+        
+        for p in self._real_pedestrians:
+            #p = Point(p)
+            if p.distance(ego_point) <= self._lookahead:
+                self._draw(p, 'r.', markersize=15)
 
         # --------------- Update presence of obstacles -------------
         self._before_pedestrian_present = pedestrian_presence
