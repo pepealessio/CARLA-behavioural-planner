@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from turtle import color
 import numpy as np
 from shapely.geometry import Point, LineString, Polygon
 from shapely.affinity import rotate, translate
@@ -471,6 +472,9 @@ class BehaviouralPlanner:
                     pass
                 #     self._draw(other_vehicle_point, 'm--')
                 else:
+                    # Perfect draw
+                    self._draw(Polygon(self._vehicle['fences'][key]), '--', color='#001a13')
+
                     # vehicle_position = self._vehicle['position'][key]
                     vehicle_position = [vehicle_point.x, vehicle_point.y]
                     vehicle_speed = self._vehicle['speeds'][key]
@@ -483,6 +487,9 @@ class BehaviouralPlanner:
                     intersection.append([closest_index, vehicle_position, vehicle_speed, dist_from_vehicle, vehicle])
             
             elif vehicle.intersects(ext_path_bb):
+                # Perfect draw
+                self._draw(Polygon(self._vehicle['fences'][key]), '--', color='#001a13')
+
                 self._draw(vehicle, 'm-.')
 
         # The lead vehicle can be said to be present if there is at least one vehicle in the area.
@@ -530,6 +537,9 @@ class BehaviouralPlanner:
             pedestrian = pedestrian_point.buffer(BB_REAL_OBSTACLE_EXTENSION)
 
             if pedestrian.intersects(extended_path_bb):
+                # Perfect draw
+                self._draw(Polygon(self._pedestrians['fences'][key]), '--', color='#001a13')
+
                 # pedestrian_point = Point(self._pedestrians['position'][key][0], self._pedestrians['position'][key][1])
                 pedestrian_speed = self._pedestrians['speeds'][key]
                 # pedestrian_position = self._pedestrians['position'][key]
