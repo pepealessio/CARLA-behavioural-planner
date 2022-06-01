@@ -523,13 +523,17 @@ class BehaviouralPlanner:
 
         # Check all pedestrians whose bounding box intersects the control area
         intersection = []
-        for key, pedestrian_bb in enumerate(self._pedestrians['fences']):
-            pedestrian = Polygon(pedestrian_bb).buffer(BB_OBSTACLE_EXTENSION)
+
+        # for key, pedestrian_bb in enumerate(self._pedestrians['fences']):   
+        for key, pedestrian_point in self._map_pedestrians:
+            # pedestrian = Polygon(pedestrian_bb).buffer(BB_OBSTACLE_EXTENSION)
+            pedestrian = pedestrian_point.buffer(BB_REAL_OBSTACLE_EXTENSION)
 
             if pedestrian.intersects(extended_path_bb):
-                pedestrian_point = Point(self._pedestrians['position'][key][0], self._pedestrians['position'][key][1])
+                # pedestrian_point = Point(self._pedestrians['position'][key][0], self._pedestrians['position'][key][1])
                 pedestrian_speed = self._pedestrians['speeds'][key]
-                pedestrian_position = self._pedestrians['position'][key]
+                # pedestrian_position = self._pedestrians['position'][key]
+                pedestrian_position = [pedestrian_point.x, pedestrian_point.y]
                 
                 # Check if the pedestrian is in the middle of the road
                 pedestrian_in_road = pedestrian.intersects(path_bb)
@@ -677,7 +681,7 @@ class BehaviouralPlanner:
                 if dist1 < dist0:
                     map_pedestrians[key] = p
             else:
-                map_vehicles[key] = p
+                map_pedestrians[key] = p
 
         self._map_vehicles = list(map_vehicles.items())
         self._map_pedestrians = list(map_pedestrians.items())
