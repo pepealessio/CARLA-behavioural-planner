@@ -228,6 +228,9 @@ class BehaviouralPlanner:
         for i, tl in enumerate([tl for tl in traffic_lights]):
             self._current_input += f'\n - Traffic lights {i}: ' + \
             f'{"GREEN" if tl[1] == 0 else "YELLOW" if tl[1] == 1 else "RED"}, distance={round(tl[2], 2)} m'
+
+        # --------------- MATCHING REAL AND PERFECT DATA ----------------
+        self.map_real_to_perfect_data(ego_point)
         
         # --------------- VEHICLES --------------------------------
         # Check for vehicle presence
@@ -262,22 +265,21 @@ class BehaviouralPlanner:
             self._current_input += f'\n - Pedestrian {i}: ' + \
                 f'Position={tuple((round(x, 1) for x in p[1][:2]))}, Speed={round(p[2], 2)} m/s, Distance={round(p[3], 2)} m'
 
-        #########################
-        for v in self._real_vehicles_0:
-            if v.distance(ego_point) <= np.min([self._lookahead, self._follow_lead_vehicle_lookahead]):
-                self._draw(v, 'k.', markersize=15)
+       
+       #####################
         
-        for p in self._real_pedestrians_0:
-            if p.distance(ego_point) <= self._lookahead:
-                self._draw(p, 'r.', markersize=15)
+        for _, v in self._map_vehicles:
+            self._draw(v, '.', color='#CC0000', markersize=20)
 
-        for v in self._real_vehicles_1:
-            if v.distance(ego_point) <= np.min([self._lookahead, self._follow_lead_vehicle_lookahead]):
-                self._draw(v, 'k.', markersize=20)
+        for v in self._real_vehicles_0 + self._real_vehicles_1:
+            self._draw(v, '.', color='#660000', markersize=15)
+
+        for _, p in self._map_pedestrians:
+            self._draw(p, '.', color='#3333FF', markersize=20)
+
+        for p in self._real_pedestrians_0 + self._real_pedestrians_1:
+            self._draw(p, '.', color='#330066', markersize=15)
         
-        for p in self._real_pedestrians_1:
-            if p.distance(ego_point) <= self._lookahead:
-                self._draw(p, 'r.', markersize=20)
 
         # --------------- Update presence of obstacles -------------
         self._before_pedestrian_present = pedestrian_presence
@@ -628,6 +630,76 @@ class BehaviouralPlanner:
                 else:
                     stop_index = closest_index
         return stop_index 
+    
+    def map_real_to_perfect_data(self, ego_point):
+        """Check for each real object from camera 0 and 1, the match with the 
+        real data from Carla.
+
+        Note:
+            We managed the double detection from the two cameras of the same
+            object by keeping the closest point to the ego_point.
+
+        Args:
+            ego_point: the point of the vehicle
+        """
+        map_vehicles = dict()
+        map_pedestrians = dict()
+
+        for v in self._real_vehicles_0:
+            key, _ = get_closest_object(v, self._vehicle['fences'])
+            map_vehicles[key] = v
+
+        for v in self._real_vehicles_1:
+            key, _ = get_closest_object(v, self._vehicle['fences'])
+            if key in map_vehicles:
+                dist0 = ego_point.distance(map_vehicles[key])
+                dist1 = ego_point.distance(v)
+                if dist1 < dist0:
+                    map_vehicles[key] = v
+            else:
+                map_vehicles[key] = v
+
+        for p in self._real_pedestrians_0:
+            key, _ = get_closest_object(p, self._pedestrians['fences'])
+            map_pedestrians[key] = p
+
+        for p in self._real_pedestrians_1:
+            key, _ = get_closest_object(p, self._pedestrians['fences'])
+            if key in map_pedestrians:
+                dist0 = ego_point.distance(map_pedestrians[key])
+                dist1 = ego_point.distance(p)
+                if dist1 < dist0:
+                    map_pedestrians[key] = p
+            else:
+                map_vehicles[key] = p
+
+        self._map_vehicles = list(map_vehicles.items())
+        self._map_pedestrians = list(map_pedestrians.items())
+        
+
+def get_closest_object(obj_point, objects_list):
+    """Get the closest geometric object from a list of objects.
+    
+    Args:
+        obj_point: A shapely object geometry.
+        objects_list: A shapely object geometry list.
+
+    Returns:
+        min_index: index of the fences dictionary.
+        min_dist: distance from the two geometry. If it's inside, is 0.
+    """
+    min_index = None
+    min_dist = float('inf')
+
+    for key, object_bb in enumerate(objects_list):
+        object_bb = Polygon(object_bb).buffer(BB_OBSTACLE_EXTENSION)
+        tmp_dist = obj_point.distance(object_bb)
+        if tmp_dist < min_dist:
+            min_dist = tmp_dist
+            min_index = key
+    
+    return min_index, min_dist
+
 
 def get_closest_index(waypoints, point):
     """Gets closest index a given list of waypoints to the point.

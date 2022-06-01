@@ -155,7 +155,7 @@ camera_parameters_1['roll'] = 0.0
 camera_parameters_1['yaw'] = 0.0
 camera_parameters_1['width'] = 300
 camera_parameters_1['height'] = 200
-camera_parameters_1['fov'] = 100
+camera_parameters_1['fov'] = 90
 
     
 class StateInfo(threading.Thread):
