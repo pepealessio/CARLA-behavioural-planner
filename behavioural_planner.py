@@ -14,10 +14,11 @@ BB_EXT_PATH_LEFT = 3.5  # m
 BB_PEDESTRIAN_LEFT = 1.5  # m
 BB_PEDESTRIAN_RIGHT = 1.5  # m
 BB_EXT_PEDESTRIAN_LEFT = 5  # m
-BB_EXT_PEDESTRIAN_RIGHT = 2.5  # m
+BB_EXT_PEDESTRIAN_RIGHT = 3.5  # m
 
 # Obstacle extension
 BB_OBSTACLE_EXTENSION = 0.25  # m
+BB_REAL_OBSTACLE_EXTENSION = 0.75  # m
 
 
 class BehaviouralPlanner:
@@ -268,17 +269,17 @@ class BehaviouralPlanner:
        
        #####################
         
-        for _, v in self._map_vehicles:
-            self._draw(v, '.', color='#CC0000', markersize=20)
+        # for _, v in self._map_vehicles:
+        #     self._draw(v, '.', color='#CC0000', markersize=20)
 
-        for v in self._real_vehicles_0 + self._real_vehicles_1:
-            self._draw(v, '.', color='#660000', markersize=15)
+        # for v in self._real_vehicles_0 + self._real_vehicles_1:
+        #     self._draw(v, '.', color='#660000', markersize=15)
 
-        for _, p in self._map_pedestrians:
-            self._draw(p, '.', color='#3333FF', markersize=20)
+        # for _, p in self._map_pedestrians:
+        #     self._draw(p, '.', color='#3333FF', markersize=20)
 
-        for p in self._real_pedestrians_0 + self._real_pedestrians_1:
-            self._draw(p, '.', color='#330066', markersize=15)
+        # for p in self._real_pedestrians_0 + self._real_pedestrians_1:
+        #     self._draw(p, '.', color='#330066', markersize=15)
         
 
         # --------------- Update presence of obstacles -------------
@@ -454,21 +455,26 @@ class BehaviouralPlanner:
 
         # Check all vehicles whose bounding box intersects the control area
         intersection = []
-        for key, vehicle_bb in enumerate(self._vehicle['fences']):
-            vehicle = Polygon(vehicle_bb).buffer(BB_OBSTACLE_EXTENSION)
+        # for key, vehicle_bb in enumerate(self._vehicle['fences']):
+        for key, vehicle_point in self._map_vehicles:
+            # vehicle = Polygon(vehicle_bb).buffer(BB_OBSTACLE_EXTENSION)
+            vehicle = vehicle_point.buffer(BB_REAL_OBSTACLE_EXTENSION)
 
             if vehicle.intersects(path_bb):
-                other_vehicle_point = Point(self._vehicle['position'][key][0], self._vehicle['position'][key][1])
+                # other_vehicle_point = Point(self._vehicle['position'][key][0], self._vehicle['position'][key][1])
+                other_vehicle_point = vehicle_point
                 _, closest_index = get_closest_index(self._waypoints, other_vehicle_point)
                 dist_from_vehicle = ego_point.distance(other_vehicle_point)
 
-                #Print untracked vehicle
+                # Print untracked vehicle
                 if dist_from_vehicle > self._follow_lead_vehicle_lookahead:
-                    self._draw(other_vehicle_point, 'm--')
+                    pass
+                #     self._draw(other_vehicle_point, 'm--')
                 else:
-                    vehicle_position = self._vehicle['position'][key]
+                    # vehicle_position = self._vehicle['position'][key]
+                    vehicle_position = [vehicle_point.x, vehicle_point.y]
                     vehicle_speed = self._vehicle['speeds'][key]
-     
+        
                     vehicle_nearest_point, _ = nearest_points(vehicle, ego_point)
                     # self._draw(vehicle_nearest_point, 'k.', markersize=15)
 
