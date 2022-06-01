@@ -307,7 +307,8 @@ def average_depth_from_ss(bb, ss_data, depth_data, obj_class):
     if x.shape[0] != 0: 
         depth /= x.shape[0]
     else:
-        depth = depth_data[(bb[1] + bb[3]) // 2][(bb[0] + bb[2]) // 2]
+        # depth = depth_data[(bb[1] + bb[3]) // 2][(bb[0] + bb[2]) // 2]
+        depth = -1
 
     return depth
 
@@ -1151,8 +1152,11 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                 # ------------------- Visualize Camera --------------------
                 # and get data from detection.
                 ###########################################################
-                vehicle_3d =  []
-                pedestrian_3d = []
+                vehicle_3d_0 =  []
+                pedestrian_3d_0 = []
+
+                vehicle_3d_1 =  []
+                pedestrian_3d_1 = []
 
                 if USE_CAMERA:
                     camera0_data = sensor_data.get('Camera0RGB', None)
@@ -1186,13 +1190,15 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                             px = (bb[0] + bb[2]) // 2
                             py = (bb[1] + bb[3]) // 2
                             depth = average_depth_from_ss(bb, sem_segmentation0, depth_array0, 'vehicle')
-                            vehicle_3d.append(Point(i2w_0.convert([px, py], depth * 1000, current_x, current_y, 0, current_yaw)[:2]))
+                            if depth > 0:
+                                vehicle_3d_0.append(Point(i2w_0.convert([px, py], depth * 1000, current_x, current_y, 0, current_yaw)[:2]))
 
                         for bb in pedestrian_box_0:
                             px = (bb[0] + bb[2]) // 2
                             py = (bb[1] + bb[3]) // 2
                             depth = average_depth_from_ss(bb, sem_segmentation0, depth_array0, 'pedestrian')
-                            pedestrian_3d.append(Point(i2w_0.convert([px, py], depth * 1000, current_x, current_y, 0, current_yaw)[:2]))
+                            if depth > 0:
+                                pedestrian_3d_0.append(Point(i2w_0.convert([px, py], depth * 1000, current_x, current_y, 0, current_yaw)[:2]))
                 
                     
                     if camera1_data is not None and depth_camera1 is not None and sem_segmentation1 is not None:
@@ -1200,13 +1206,15 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                             px = (bb[0] + bb[2]) // 2
                             py = (bb[1] + bb[3]) // 2
                             depth = average_depth_from_ss(bb, sem_segmentation1, depth_array1, 'vehicle')
-                            vehicle_3d.append(Point(i2w_1.convert([px, py], depth * 1000, current_x, current_y, 0, current_yaw)[:2]))
+                            if depth > 0:
+                                vehicle_3d_1.append(Point(i2w_1.convert([px, py], depth * 1000, current_x, current_y, 0, current_yaw)[:2]))
 
                         for bb in pedestrian_box_1:
                             px = (bb[0] + bb[2]) // 2
                             py = (bb[1] + bb[3]) // 2
                             depth = average_depth_from_ss(bb, sem_segmentation1, depth_array1, 'pedestrian')
-                            pedestrian_3d.append(Point(i2w_1.convert([px, py], depth * 1000, current_x, current_y, 0, current_yaw)[:2]))
+                            if depth > 0:
+                                pedestrian_3d_1.append(Point(i2w_1.convert([px, py], depth * 1000, current_x, current_y, 0, current_yaw)[:2]))
                 
                 # UPDATE HERE the obstacles list
                 obstacles = []
@@ -1256,8 +1264,10 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                     # Set lookahead based on current speed.
                     bp.set_lookahead(BP_LOOKAHEAD_BASE + BP_LOOKAHEAD_TIME * open_loop_speed)
 
-                    bp.set_real_pedestrians(pedestrian_3d)
-                    bp.set_real_vehicles(vehicle_3d)
+                    bp.set_real_pedestrians_cam0(pedestrian_3d_0)
+                    bp.set_real_vehicles_cam0(vehicle_3d_0)
+                    bp.set_real_pedestrians_cam1(pedestrian_3d_1)
+                    bp.set_real_vehicles_cam1(vehicle_3d_1)
 
                     # Perform a state transition in the behavioural planner.
                     bp.transition_state(waypoints, ego_state, current_speed)

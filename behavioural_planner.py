@@ -128,11 +128,17 @@ class BehaviouralPlanner:
         current input."""
         return self._state_info, self._current_input
 
-    def set_real_pedestrians(self, pedestrians):
-        self._real_pedestrians = pedestrians
+    def set_real_pedestrians_cam0(self, pedestrians):
+        self._real_pedestrians_0 = pedestrians
 
-    def set_real_vehicles(self, vehicles):
-        self._real_vehicles = vehicles
+    def set_real_vehicles_cam0(self, vehicles):
+        self._real_vehicles_0 = vehicles
+
+    def set_real_pedestrians_cam1(self, pedestrians):
+        self._real_pedestrians_1 = pedestrians
+
+    def set_real_vehicles_cam1(self, vehicles):
+        self._real_vehicles_1 = vehicles
 
     # Handles state transitions and computes the goal state.
     # NOTE: Since the FSM was implemented with the FSM class, here we receive the input to 
@@ -257,15 +263,21 @@ class BehaviouralPlanner:
                 f'Position={tuple((round(x, 1) for x in p[1][:2]))}, Speed={round(p[2], 2)} m/s, Distance={round(p[3], 2)} m'
 
         #########################
-        for v in self._real_vehicles:
-            #v = Point(v)
+        for v in self._real_vehicles_0:
+            if v.distance(ego_point) <= np.min([self._lookahead, self._follow_lead_vehicle_lookahead]):
+                self._draw(v, 'k.', markersize=15)
+        
+        for p in self._real_pedestrians_0:
+            if p.distance(ego_point) <= self._lookahead:
+                self._draw(p, 'r.', markersize=15)
+
+        for v in self._real_vehicles_1:
             if v.distance(ego_point) <= np.min([self._lookahead, self._follow_lead_vehicle_lookahead]):
                 self._draw(v, 'k.', markersize=20)
         
-        for p in self._real_pedestrians:
-            #p = Point(p)
+        for p in self._real_pedestrians_1:
             if p.distance(ego_point) <= self._lookahead:
-                self._draw(p, 'r.', markersize=15)
+                self._draw(p, 'r.', markersize=20)
 
         # --------------- Update presence of obstacles -------------
         self._before_pedestrian_present = pedestrian_presence
