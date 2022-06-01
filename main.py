@@ -66,6 +66,7 @@ RETRY_SCENE_TIMES = 3
 USE_CAMERA = True      # See the car camera (useful in non-local server)
 VISUALIZE_STATE_INFO = True  # See a window with the state info
 TRAFFIC_LIGHT_STOP_LINE_LEN = 4     # The lenght of the stop line for traffic lights
+POINT_3D_DIST_FIX = 1
 ###############################################################################
 
 ITER_FOR_SIM_TIMESTEP  = 10     # no. iterations to compute approx sim timestep
@@ -1184,6 +1185,8 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
 
                     sem_segmentation1 = sensor_data.get('Camera1SemSeg', None)
 
+                    ego_point = Point(current_x, current_y)
+
                     # Img to world
                     if camera0_data is not None and depth_camera0 is not None and sem_segmentation0 is not None:
                         for bb in vehicle_box_0:
@@ -1191,14 +1194,18 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                             py = (bb[1] + bb[3]) // 2
                             depth = average_depth_from_ss(bb, sem_segmentation0, depth_array0, 'vehicle')
                             if depth > 0:
-                                vehicle_3d_0.append(Point(i2w_0.convert([px, py], depth * 1000, current_x, current_y, 0, current_yaw)[:2]))
+                                point_3d = Point(i2w_0.convert([px, py], depth * 1000, current_x, current_y, 0, current_yaw)[:2])
+                                # theta = np.arctan2(-(ego_point.y - point_3d.y), (ego_point.x - point_3d.x))
+                                # point_3d = translate(point_3d, POINT_3D_DIST_FIX * np.sin(theta), POINT_3D_DIST_FIX * np.cos(theta), 0)
+                                vehicle_3d_0.append(point_3d)
 
                         for bb in pedestrian_box_0:
                             px = (bb[0] + bb[2]) // 2
                             py = (bb[1] + bb[3]) // 2
                             depth = average_depth_from_ss(bb, sem_segmentation0, depth_array0, 'pedestrian')
                             if depth > 0:
-                                pedestrian_3d_0.append(Point(i2w_0.convert([px, py], depth * 1000, current_x, current_y, 0, current_yaw)[:2]))
+                                point_3d = Point(i2w_0.convert([px, py], depth * 1000, current_x, current_y, 0, current_yaw)[:2])
+                                pedestrian_3d_0.append(point_3d)
                 
                     
                     if camera1_data is not None and depth_camera1 is not None and sem_segmentation1 is not None:
@@ -1207,14 +1214,18 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                             py = (bb[1] + bb[3]) // 2
                             depth = average_depth_from_ss(bb, sem_segmentation1, depth_array1, 'vehicle')
                             if depth > 0:
-                                vehicle_3d_1.append(Point(i2w_1.convert([px, py], depth * 1000, current_x, current_y, 0, current_yaw)[:2]))
+                                point_3d = Point(i2w_1.convert([px, py], depth * 1000, current_x, current_y, 0, current_yaw)[:2])
+                                # theta = np.arctan2(-(ego_point.y - point_3d.y), (ego_point.x - point_3d.x))
+                                # point_3d = translate(point_3d, POINT_3D_DIST_FIX * np.sin(theta), POINT_3D_DIST_FIX * np.cos(theta), 0)
+                                vehicle_3d_1.append(point_3d)
 
                         for bb in pedestrian_box_1:
                             px = (bb[0] + bb[2]) // 2
                             py = (bb[1] + bb[3]) // 2
                             depth = average_depth_from_ss(bb, sem_segmentation1, depth_array1, 'pedestrian')
                             if depth > 0:
-                                pedestrian_3d_1.append(Point(i2w_1.convert([px, py], depth * 1000, current_x, current_y, 0, current_yaw)[:2]))
+                                point_3d = Point(i2w_1.convert([px, py], depth * 1000, current_x, current_y, 0, current_yaw)[:2])
+                                pedestrian_3d_1.append(point_3d)
                 
                 # UPDATE HERE the obstacles list
                 obstacles = []

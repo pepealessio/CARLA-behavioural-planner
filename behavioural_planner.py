@@ -19,7 +19,7 @@ BB_EXT_PEDESTRIAN_RIGHT = 3.5  # m
 
 # Obstacle extension
 BB_OBSTACLE_EXTENSION = 0.25  # m
-BB_REAL_OBSTACLE_EXTENSION = 0.75  # m
+BB_REAL_OBSTACLE_EXTENSION = 0.55  # m
 
 
 class BehaviouralPlanner:
