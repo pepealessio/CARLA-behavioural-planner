@@ -435,6 +435,13 @@ def make_carla_settings(args, num_pedestrians, num_vehicles, seed_pedestrians, s
         camera12.set_rotation(camera_parameters_1['pitch'], camera_parameters_1['yaw'], camera_parameters_1['roll'])
         settings.add_sensor(camera12)
 
+    if args.server:
+        cameraS = sensor.Camera('CameraServ')
+        cameraS.set_image_size(900, 480)
+        cameraS.set_position(-5.0, 0.0, 2.5)
+        cameraS.set_rotation(-15.0, 0.0, 0.0)
+        settings.add_sensor(cameraS)
+
     return settings
 
 class Timer(object):
@@ -1159,6 +1166,12 @@ def exec_waypoint_nav_demo(args, state_info, start_wp, stop_wp, num_pedestrians,
                 vehicle_3d_1 =  []
                 pedestrian_3d_1 = []
 
+                if args.server:
+                    cameraS_data = sensor_data.get('CameraServ', None)
+                    if cameraS_data is not None:
+                        cameraS_data = to_bgra_array(cameraS_data)
+                        cv2.imshow("CameraServ", cameraS_data)
+
                 if USE_CAMERA:
                     camera0_data = sensor_data.get('Camera0RGB', None)
                     if camera0_data is not None:
@@ -1565,6 +1578,11 @@ def main():
         default=f'{SEED_VEHICLES}',
         help='Vehicles seed. Multiple chooses must be separated by a comma like "1,3".' + \
              f'(default: {SEED_VEHICLES})')
+    argparser.add_argument(
+        '--server-enabled',
+        action='store_true',
+        dest='server',
+        help='Spawn a camera image simulating server image.')
     args = argparser.parse_args()
 
     # Logging startup info
