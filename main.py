@@ -289,8 +289,12 @@ def average_depth_from_ss(bb, ss_data, depth_data, obj_class):
     """
     # Semantic segmentation cutted data
     array = labels_to_array(ss_data)
-    array = array[bb[1]:bb[3], bb[0]:bb[2]]
-    
+    xmin = int(bb[0] + (bb[2] - bb[0]) / 2)
+    xmax = bb[2]
+    ymin = int(bb[1] + (bb[3] - bb[1]) / 3)
+    ymax = int(bb[1] + (bb[3] - bb[1]) * 2 / 3)
+    array = array[ymin:ymax, xmin:xmax]
+
     if obj_class == 'vehicle':
         key = 10
     elif obj_class == 'pedestrian':
@@ -302,7 +306,7 @@ def average_depth_from_ss(bb, ss_data, depth_data, obj_class):
     # Average dept with all points of that class
     depth = 0
     for i in range(x.shape[0]):
-        depth += depth_data[bb[1] + y[i]][bb[0] + x[i]]
+        depth += depth_data[ymin + y[i]][xmin + x[i]]
     
     # If no points in segmentation take just the mean point
     if x.shape[0] != 0: 
